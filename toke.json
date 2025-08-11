@@ -1,0 +1,8 @@
+{
+  "$schema": "https://weedmaps.com/toke.json",
+  "lsp": {
+    "Go": {
+      "command": "gopls"
+    }
+  }
+}
