@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/weedmaps/toke/internal/diff"
-	"github.com/weedmaps/toke/internal/fsext"
-	"github.com/weedmaps/toke/internal/history"
-	"github.com/weedmaps/toke/internal/lsp"
-	"github.com/weedmaps/toke/internal/permission"
+	"github.com/chasedut/toke/internal/diff"
+	"github.com/chasedut/toke/internal/fsext"
+	"github.com/chasedut/toke/internal/history"
+	"github.com/chasedut/toke/internal/lsp"
+	"github.com/chasedut/toke/internal/permission"
 )
 
 type MultiEditOperation struct {

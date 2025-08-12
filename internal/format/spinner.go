@@ -7,8 +7,8 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/weedmaps/toke/internal/tui/components/anim"
-	"github.com/weedmaps/toke/internal/tui/styles"
+	"github.com/chasedut/toke/internal/tui/components/anim"
+	"github.com/chasedut/toke/internal/tui/styles"
 	"github.com/charmbracelet/x/ansi"
 )
 

@@ -11,12 +11,12 @@ import (
 	"github.com/charmbracelet/bubbles/v2/help"
 	"github.com/charmbracelet/bubbles/v2/key"
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/weedmaps/toke/internal/message"
-	"github.com/weedmaps/toke/internal/tui/components/core"
-	"github.com/weedmaps/toke/internal/tui/components/dialogs"
-	"github.com/weedmaps/toke/internal/tui/components/image"
-	"github.com/weedmaps/toke/internal/tui/styles"
-	"github.com/weedmaps/toke/internal/tui/util"
+	"github.com/chasedut/toke/internal/message"
+	"github.com/chasedut/toke/internal/tui/components/core"
+	"github.com/chasedut/toke/internal/tui/components/dialogs"
+	"github.com/chasedut/toke/internal/tui/components/image"
+	"github.com/chasedut/toke/internal/tui/styles"
+	"github.com/chasedut/toke/internal/tui/util"
 	"github.com/charmbracelet/lipgloss/v2"
 )
 

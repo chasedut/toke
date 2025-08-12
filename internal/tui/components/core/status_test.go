@@ -5,7 +5,7 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/weedmaps/toke/internal/tui/components/core"
+	"github.com/chasedut/toke/internal/tui/components/core"
 	"github.com/charmbracelet/x/exp/golden"
 )
 

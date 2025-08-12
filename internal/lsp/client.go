@@ -15,9 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/log"
-	"github.com/weedmaps/toke/internal/lsp/protocol"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/log"
+	"github.com/chasedut/toke/internal/lsp/protocol"
 )
 
 type Client struct {

@@ -5,14 +5,14 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/fsext"
-	"github.com/weedmaps/toke/internal/lsp"
-	"github.com/weedmaps/toke/internal/lsp/protocol"
-	"github.com/weedmaps/toke/internal/pubsub"
-	"github.com/weedmaps/toke/internal/session"
-	"github.com/weedmaps/toke/internal/tui/styles"
-	"github.com/weedmaps/toke/internal/tui/util"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/fsext"
+	"github.com/chasedut/toke/internal/lsp"
+	"github.com/chasedut/toke/internal/lsp/protocol"
+	"github.com/chasedut/toke/internal/pubsub"
+	"github.com/chasedut/toke/internal/session"
+	"github.com/chasedut/toke/internal/tui/styles"
+	"github.com/chasedut/toke/internal/tui/util"
 	"github.com/charmbracelet/lipgloss/v2"
 )
 

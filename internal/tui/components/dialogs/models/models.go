@@ -9,12 +9,12 @@ import (
 	"github.com/charmbracelet/bubbles/v2/spinner"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/tui/components/core"
-	"github.com/weedmaps/toke/internal/tui/components/dialogs"
-	"github.com/weedmaps/toke/internal/tui/exp/list"
-	"github.com/weedmaps/toke/internal/tui/styles"
-	"github.com/weedmaps/toke/internal/tui/util"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/tui/components/core"
+	"github.com/chasedut/toke/internal/tui/components/dialogs"
+	"github.com/chasedut/toke/internal/tui/exp/list"
+	"github.com/chasedut/toke/internal/tui/styles"
+	"github.com/chasedut/toke/internal/tui/util"
 	"github.com/charmbracelet/lipgloss/v2"
 )
 
@@ -37,6 +37,12 @@ type ModelSelectedMsg struct {
 	Model     config.SelectedModel
 	ModelType config.SelectedModelType
 }
+
+// LaunchLocalSetupMsg is sent when user wants to set up local models
+type LaunchLocalSetupMsg struct{}
+
+// LaunchAPISetupMsg is sent when user wants to set up API keys
+type LaunchAPISetupMsg struct{}
 
 // CloseModelDialogMsg is sent when a model is selected
 type CloseModelDialogMsg struct{}
@@ -162,6 +168,23 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				modelType = config.SelectedModelTypeLarge
 			} else {
 				modelType = config.SelectedModelTypeSmall
+			}
+
+			// Check if this is a setup option
+			if selectedItem.Provider.ID == "local_setup" {
+				// Launch the local model setup dialog
+				return m, tea.Sequence(
+					util.CmdHandler(dialogs.CloseDialogMsg{}),
+					util.CmdHandler(LaunchLocalSetupMsg{}),
+				)
+			}
+			
+			if selectedItem.Provider.ID == "api_setup" {
+				// Launch the API key setup dialog
+				return m, tea.Sequence(
+					util.CmdHandler(dialogs.CloseDialogMsg{}),
+					util.CmdHandler(LaunchAPISetupMsg{}),
+				)
 			}
 
 			// Check if provider is configured

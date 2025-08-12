@@ -4,9 +4,9 @@ import (
 	"slices"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/weedmaps/toke/internal/csync"
-	"github.com/weedmaps/toke/internal/tui/components/core/layout"
-	"github.com/weedmaps/toke/internal/tui/util"
+	"github.com/chasedut/toke/internal/csync"
+	"github.com/chasedut/toke/internal/tui/components/core/layout"
+	"github.com/chasedut/toke/internal/tui/util"
 )
 
 type Group[T Item] struct {

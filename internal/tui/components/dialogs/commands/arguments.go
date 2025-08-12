@@ -8,9 +8,9 @@ import (
 	"github.com/charmbracelet/bubbles/v2/key"
 	"github.com/charmbracelet/bubbles/v2/textinput"
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/weedmaps/toke/internal/tui/components/dialogs"
-	"github.com/weedmaps/toke/internal/tui/styles"
-	"github.com/weedmaps/toke/internal/tui/util"
+	"github.com/chasedut/toke/internal/tui/components/dialogs"
+	"github.com/chasedut/toke/internal/tui/styles"
+	"github.com/chasedut/toke/internal/tui/util"
 	"github.com/charmbracelet/lipgloss/v2"
 )
 

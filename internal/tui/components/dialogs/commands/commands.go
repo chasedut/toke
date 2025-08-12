@@ -9,14 +9,14 @@ import (
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
 	"github.com/charmbracelet/lipgloss/v2"
 
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/llm/prompt"
-	"github.com/weedmaps/toke/internal/tui/components/chat"
-	"github.com/weedmaps/toke/internal/tui/components/core"
-	"github.com/weedmaps/toke/internal/tui/components/dialogs"
-	"github.com/weedmaps/toke/internal/tui/exp/list"
-	"github.com/weedmaps/toke/internal/tui/styles"
-	"github.com/weedmaps/toke/internal/tui/util"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/llm/prompt"
+	"github.com/chasedut/toke/internal/tui/components/chat"
+	"github.com/chasedut/toke/internal/tui/components/core"
+	"github.com/chasedut/toke/internal/tui/components/dialogs"
+	"github.com/chasedut/toke/internal/tui/exp/list"
+	"github.com/chasedut/toke/internal/tui/styles"
+	"github.com/chasedut/toke/internal/tui/util"
 )
 
 const (

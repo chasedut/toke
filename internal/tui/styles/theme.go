@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/v2/textarea"
 	"github.com/charmbracelet/bubbles/v2/textinput"
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/weedmaps/toke/internal/tui/exp/diffview"
+	"github.com/chasedut/toke/internal/tui/exp/diffview"
 	"github.com/charmbracelet/glamour/v2/ansi"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/charmbracelet/x/exp/charmtone"

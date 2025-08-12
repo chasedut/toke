@@ -10,19 +10,19 @@ import (
 	"github.com/charmbracelet/bubbles/v2/spinner"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/llm/prompt"
-	"github.com/weedmaps/toke/internal/tui/components/chat"
-	"github.com/weedmaps/toke/internal/tui/components/core"
-	"github.com/weedmaps/toke/internal/tui/components/core/layout"
-	"github.com/weedmaps/toke/internal/tui/components/dialogs/models"
-	"github.com/weedmaps/toke/internal/tui/components/logo"
-	lspcomponent "github.com/weedmaps/toke/internal/tui/components/lsp"
-	"github.com/weedmaps/toke/internal/tui/components/mcp"
-	"github.com/weedmaps/toke/internal/tui/exp/list"
-	"github.com/weedmaps/toke/internal/tui/styles"
-	"github.com/weedmaps/toke/internal/tui/util"
-	"github.com/weedmaps/toke/internal/version"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/llm/prompt"
+	"github.com/chasedut/toke/internal/tui/components/chat"
+	"github.com/chasedut/toke/internal/tui/components/core"
+	"github.com/chasedut/toke/internal/tui/components/core/layout"
+	"github.com/chasedut/toke/internal/tui/components/dialogs/models"
+	"github.com/chasedut/toke/internal/tui/components/logo"
+	lspcomponent "github.com/chasedut/toke/internal/tui/components/lsp"
+	"github.com/chasedut/toke/internal/tui/components/mcp"
+	"github.com/chasedut/toke/internal/tui/exp/list"
+	"github.com/chasedut/toke/internal/tui/styles"
+	"github.com/chasedut/toke/internal/tui/util"
+	"github.com/chasedut/toke/internal/version"
 	"github.com/charmbracelet/lipgloss/v2"
 )
 
@@ -53,6 +53,7 @@ const (
 type (
 	OnboardingCompleteMsg struct{}
 	SubmitAPIKeyMsg       struct{}
+	LocalBackendMsg       struct{}
 )
 
 type splashCmp struct {

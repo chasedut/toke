@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/message"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/message"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 )

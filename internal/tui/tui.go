@@ -8,29 +8,31 @@ import (
 
 	"github.com/charmbracelet/bubbles/v2/key"
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/weedmaps/toke/internal/app"
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/llm/agent"
-	"github.com/weedmaps/toke/internal/permission"
-	"github.com/weedmaps/toke/internal/pubsub"
-	cmpChat "github.com/weedmaps/toke/internal/tui/components/chat"
-	"github.com/weedmaps/toke/internal/tui/components/chat/splash"
-	"github.com/weedmaps/toke/internal/tui/components/completions"
-	"github.com/weedmaps/toke/internal/tui/components/core"
-	"github.com/weedmaps/toke/internal/tui/components/core/layout"
-	"github.com/weedmaps/toke/internal/tui/components/core/status"
-	"github.com/weedmaps/toke/internal/tui/components/dialogs"
-	"github.com/weedmaps/toke/internal/tui/components/dialogs/commands"
-	"github.com/weedmaps/toke/internal/tui/components/dialogs/compact"
-	"github.com/weedmaps/toke/internal/tui/components/dialogs/filepicker"
-	"github.com/weedmaps/toke/internal/tui/components/dialogs/models"
-	"github.com/weedmaps/toke/internal/tui/components/dialogs/permissions"
-	"github.com/weedmaps/toke/internal/tui/components/dialogs/quit"
-	"github.com/weedmaps/toke/internal/tui/components/dialogs/sessions"
-	"github.com/weedmaps/toke/internal/tui/page"
-	"github.com/weedmaps/toke/internal/tui/page/chat"
-	"github.com/weedmaps/toke/internal/tui/styles"
-	"github.com/weedmaps/toke/internal/tui/util"
+	"github.com/chasedut/toke/internal/app"
+	"github.com/chasedut/toke/internal/backend"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/llm/agent"
+	"github.com/chasedut/toke/internal/permission"
+	"github.com/chasedut/toke/internal/pubsub"
+	cmpChat "github.com/chasedut/toke/internal/tui/components/chat"
+	"github.com/chasedut/toke/internal/tui/components/chat/splash"
+	"github.com/chasedut/toke/internal/tui/components/completions"
+	"github.com/chasedut/toke/internal/tui/components/core"
+	"github.com/chasedut/toke/internal/tui/components/core/layout"
+	"github.com/chasedut/toke/internal/tui/components/core/status"
+	"github.com/chasedut/toke/internal/tui/components/dialogs"
+	backendDlg "github.com/chasedut/toke/internal/tui/components/dialogs/backend"
+	"github.com/chasedut/toke/internal/tui/components/dialogs/commands"
+	"github.com/chasedut/toke/internal/tui/components/dialogs/compact"
+	"github.com/chasedut/toke/internal/tui/components/dialogs/filepicker"
+	"github.com/chasedut/toke/internal/tui/components/dialogs/models"
+	"github.com/chasedut/toke/internal/tui/components/dialogs/permissions"
+	"github.com/chasedut/toke/internal/tui/components/dialogs/quit"
+	"github.com/chasedut/toke/internal/tui/components/dialogs/sessions"
+	"github.com/chasedut/toke/internal/tui/page"
+	"github.com/chasedut/toke/internal/tui/page/chat"
+	"github.com/chasedut/toke/internal/tui/styles"
+	"github.com/chasedut/toke/internal/tui/util"
 	"github.com/charmbracelet/lipgloss/v2"
 )
 
@@ -197,6 +199,52 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			modelTypeName = "small"
 		}
 		return a, util.ReportInfo(fmt.Sprintf("%s model changed to %s", modelTypeName, msg.Model.Model))
+	
+	// Launch local model setup
+	case models.LaunchLocalSetupMsg:
+		// Close any existing dialogs and open the backend setup dialog
+		// Create the backend setup dialog with callbacks
+		onComplete := func(model *backend.ModelOption) tea.Cmd {
+			// Model selected and downloaded - configure it
+			if err := config.Get().ConfigureLocalModel(model); err != nil {
+				return util.ReportError(fmt.Errorf("Failed to configure local model: %v", err))
+			}
+			// Update the agent to use the local model
+			if err := a.app.UpdateAgentModel(); err != nil {
+				return util.ReportError(fmt.Errorf("Failed to update agent: %v", err))
+			}
+			return util.ReportInfo(fmt.Sprintf("Local model %s is now active", model.Name))
+		}
+		
+		onSkip := func() tea.Cmd {
+			// User skipped setup
+			return util.ReportInfo("Local model setup skipped")
+		}
+		
+		onAPIKey := func() tea.Cmd {
+			// User wants to enter API key instead - open models dialog
+			return util.CmdHandler(dialogs.OpenDialogMsg{Model: models.NewModelDialogCmp()})
+		}
+		
+		// Note: The backend dialog will need to be updated to handle tea.Cmd callbacks
+		_ = onComplete
+		_ = onSkip
+		_ = onAPIKey
+		
+		// Create orchestrator for the dialog
+		dataDir := ".toke"
+		if cfg := config.Get(); cfg.Options != nil && cfg.Options.DataDirectory != "" {
+			dataDir = cfg.Options.DataDirectory
+		}
+		orchestrator := backend.NewOrchestrator(dataDir)
+		
+		backendDialog := backendDlg.New(
+			orchestrator,
+			nil, // Will need to update the dialog to handle commands differently
+			nil,
+			nil,
+		)
+		return a, util.CmdHandler(dialogs.OpenDialogMsg{Model: backendDialog})
 
 	// File Picker
 	case commands.OpenFilePickerMsg:

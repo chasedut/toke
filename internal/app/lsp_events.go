@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/weedmaps/toke/internal/csync"
-	"github.com/weedmaps/toke/internal/lsp"
-	"github.com/weedmaps/toke/internal/pubsub"
+	"github.com/chasedut/toke/internal/csync"
+	"github.com/chasedut/toke/internal/lsp"
+	"github.com/chasedut/toke/internal/pubsub"
 )
 
 // LSPEventType represents the type of LSP event

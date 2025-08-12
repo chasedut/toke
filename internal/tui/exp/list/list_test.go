@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/weedmaps/toke/internal/tui/components/core/layout"
+	"github.com/chasedut/toke/internal/tui/components/core/layout"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/charmbracelet/x/exp/golden"
 	"github.com/google/uuid"

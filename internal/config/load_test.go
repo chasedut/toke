@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
-	"github.com/weedmaps/toke/internal/csync"
-	"github.com/weedmaps/toke/internal/env"
+	"github.com/chasedut/toke/internal/csync"
+	"github.com/chasedut/toke/internal/env"
 	"github.com/stretchr/testify/require"
 )
 

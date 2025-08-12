@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/log"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/log"
 	"google.golang.org/genai"
 )
 

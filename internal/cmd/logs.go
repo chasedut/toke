@@ -10,7 +10,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/weedmaps/toke/internal/config"
+	"github.com/chasedut/toke/internal/config"
 	"github.com/charmbracelet/log/v2"
 	"github.com/nxadm/tail"
 	"github.com/spf13/cobra"

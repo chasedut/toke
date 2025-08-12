@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"log/slog"
 
-	"github.com/weedmaps/toke/internal/config"
+	"github.com/chasedut/toke/internal/config"
 
-	"github.com/weedmaps/toke/internal/lsp/protocol"
-	"github.com/weedmaps/toke/internal/lsp/util"
+	"github.com/chasedut/toke/internal/lsp/protocol"
+	"github.com/chasedut/toke/internal/lsp/util"
 )
 
 // Requests

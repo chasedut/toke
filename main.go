@@ -9,8 +9,8 @@ import (
 
 	_ "github.com/joho/godotenv/autoload" // automatically load .env files
 
-	"github.com/weedmaps/toke/internal/cmd"
-	"github.com/weedmaps/toke/internal/log"
+	"github.com/chasedut/toke/internal/cmd"
+	"github.com/chasedut/toke/internal/log"
 )
 
 func main() {

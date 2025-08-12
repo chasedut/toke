@@ -12,7 +12,7 @@ import (
 
 	md "github.com/JohannesKaufmann/html-to-markdown"
 	"github.com/PuerkitoBio/goquery"
-	"github.com/weedmaps/toke/internal/permission"
+	"github.com/chasedut/toke/internal/permission"
 )
 
 type FetchParams struct {

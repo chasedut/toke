@@ -1,9 +1,9 @@
 # Toke 🍃
 
 <p align="center">
-    <a href="https://stuff.charm.sh/toke/toke-logo.png"><img width="450" alt="Toke Logo" src="https://github.com/user-attachments/assets/toke-logo.png" /></a><br />
-    <a href="https://github.com/weedmaps/toke/releases"><img src="https://img.shields.io/github/release/weedmaps/toke" alt="Latest Release"></a>
-    <a href="https://github.com/weedmaps/toke/actions"><img src="https://github.com/weedmaps/toke/workflows/build/badge.svg" alt="Build Status"></a>
+    <img width="600" alt="Toke Logo" src="assets/toke-logo.png" /><br />
+    <a href="https://github.com/chasedut/toke/releases"><img src="https://img.shields.io/github/release/chasedut/toke" alt="Latest Release"></a>
+    <a href="https://github.com/chasedut/toke/actions"><img src="https://github.com/chasedut/toke/workflows/build/badge.svg" alt="Build Status"></a>
 </p>
 
 <p align="center">Your favorite coding buddy that's always down to smoke some bugs 💨<br />Built with love for the Weedmaps 2025 Hackathon.</p>
@@ -15,7 +15,9 @@
 Toke is an AI-powered coding assistant with serious weed culture vibes. Fork of Crush, but way more chill.
 
 - **Multi-Model Support:** Choose your strain - Claude Kush, GPT OG, or whatever hits right
+- **MLX Support (v0.4202+):** Apple Silicon optimized with GLM-4.5-Air models for that smooth performance
 - **Session-Based:** Keep your coding sessions organized like a proper stash box
+- **Auto-Versioning:** Each build auto-increments (0.4202 → 0.4203 → ...)
 - **Weed Industry Focus:** Built by stoners, for stoners in tech
 - **420-Friendly:** Special features at 4:20, because why not?
 - **Works Everywhere:** Blazes through macOS, Linux, Windows - we don't discriminate
@@ -23,13 +25,13 @@ Toke is an AI-powered coding assistant with serious weed culture vibes. Fork of 
 ## Installation 🌿
 
 ```bash
-# Homebrew (coming soon)
-brew install weedmaps/tap/toke
-
-# Or just build it yourself
-git clone https://github.com/weedmaps/toke.git
+# Build from source
+git clone https://github.com/chasedut/toke.git
 cd toke
-go build -o toke
+make build
+
+# Or install directly with Go
+go install github.com/chasedut/toke@latest
 ```
 
 ## Getting Started 💨

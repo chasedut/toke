@@ -6,9 +6,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/csync"
-	"github.com/weedmaps/toke/internal/env"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/csync"
+	"github.com/chasedut/toke/internal/env"
 )
 
 type PromptID string

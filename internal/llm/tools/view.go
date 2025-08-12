@@ -11,8 +11,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/weedmaps/toke/internal/lsp"
-	"github.com/weedmaps/toke/internal/permission"
+	"github.com/chasedut/toke/internal/lsp"
+	"github.com/chasedut/toke/internal/permission"
 )
 
 type ViewParams struct {
