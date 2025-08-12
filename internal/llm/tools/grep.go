@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/weedmaps/toke/internal/fsext"
+	"github.com/chasedut/toke/internal/fsext"
 )
 
 // regexCache provides thread-safe caching of compiled regex patterns

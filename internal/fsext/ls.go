@@ -8,8 +8,8 @@ import (
 	"sync"
 
 	"github.com/charlievieth/fastwalk"
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/csync"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/csync"
 	ignore "github.com/sabhiram/go-gitignore"
 )
 

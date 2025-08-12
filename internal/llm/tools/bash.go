@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/weedmaps/toke/internal/permission"
-	"github.com/weedmaps/toke/internal/shell"
+	"github.com/chasedut/toke/internal/permission"
+	"github.com/chasedut/toke/internal/shell"
 )
 
 type BashParams struct {

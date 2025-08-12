@@ -1,0 +1,124 @@
+name: Build llama.cpp Server
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0' # Weekly on Sunday
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            arch: arm64
+            name: llama-server-darwin-arm64
+            cmake_args: -DLLAMA_METAL=ON
+          - os: macos-latest
+            arch: x86_64
+            name: llama-server-darwin-x64
+            cmake_args: ""
+          - os: ubuntu-latest
+            arch: x86_64
+            name: llama-server-linux-x64
+            cmake_args: ""
+          - os: windows-latest
+            arch: x86_64
+            name: llama-server-windows-x64.exe
+            cmake_args: ""
+
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Clone llama.cpp
+      uses: actions/checkout@v4
+      with:
+        repository: ggerganov/llama.cpp
+        path: llama.cpp
+        submodules: recursive
+    
+    - name: Setup build environment (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install cmake
+    
+    - name: Setup build environment (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake
+    
+    - name: Build llama.cpp
+      run: |
+        cd llama.cpp
+        mkdir build
+        cd build
+        cmake .. ${{ matrix.cmake_args }} -DLLAMA_SERVER_SSL=OFF
+        cmake --build . --config Release --target llama-server
+    
+    - name: Prepare binary
+      run: |
+        if [ "${{ runner.os }}" == "Windows" ]; then
+          cp llama.cpp/build/bin/Release/llama-server.exe ${{ matrix.name }}
+        else
+          cp llama.cpp/build/bin/llama-server ${{ matrix.name }}
+          chmod +x ${{ matrix.name }}
+        fi
+      shell: bash
+    
+    - name: Compress binary
+      run: |
+        if [ "${{ runner.os }}" == "Windows" ]; then
+          7z a ${{ matrix.name }}.zip ${{ matrix.name }}
+        else
+          gzip -9 ${{ matrix.name }}
+        fi
+      shell: bash
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.name }}
+        path: ${{ matrix.name }}*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+    
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: llama-server-${{ github.run_number }}
+        release_name: llama.cpp Server Binaries - Build ${{ github.run_number }}
+        body: |
+          Pre-built llama.cpp server binaries for Toke.
+          
+          ## Downloads
+          - `llama-server-darwin-arm64.gz` - macOS Apple Silicon (M1/M2/M3)
+          - `llama-server-darwin-x64.gz` - macOS Intel
+          - `llama-server-linux-x64.gz` - Linux x64
+          - `llama-server-windows-x64.exe.zip` - Windows x64
+          
+          ## Usage
+          Extract and run directly, or let Toke download automatically.
+        draft: false
+        prerelease: false
+    
+    - name: Upload Release Assets
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./llama-server-darwin-arm64/llama-server-darwin-arm64.gz
+        asset_name: llama-server-darwin-arm64.gz
+        asset_content_type: application/gzip
+    
+    # Repeat for other assets...

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/llm/tools"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/llm/tools"
 )
 
 func CoderPrompt(p string, contextFiles ...string) string {

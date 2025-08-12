@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/weedmaps/toke/internal/db"
-	"github.com/weedmaps/toke/internal/pubsub"
+	"github.com/chasedut/toke/internal/db"
+	"github.com/chasedut/toke/internal/pubsub"
 	"github.com/google/uuid"
 )
 

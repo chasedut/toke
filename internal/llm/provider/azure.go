@@ -1,8 +1,8 @@
 package provider
 
 import (
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/log"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/log"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/azure"
 	"github.com/openai/openai-go/option"

@@ -7,8 +7,8 @@ import (
 	"github.com/alecthomas/chroma/v2"
 	"github.com/charmbracelet/bubbles/v2/help"
 	"github.com/charmbracelet/bubbles/v2/key"
-	"github.com/weedmaps/toke/internal/tui/exp/diffview"
-	"github.com/weedmaps/toke/internal/tui/styles"
+	"github.com/chasedut/toke/internal/tui/exp/diffview"
+	"github.com/chasedut/toke/internal/tui/styles"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )

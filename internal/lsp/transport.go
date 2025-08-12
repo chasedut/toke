@@ -9,7 +9,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/weedmaps/toke/internal/config"
+	"github.com/chasedut/toke/internal/config"
 )
 
 // WriteMessage writes an LSP message to the given writer

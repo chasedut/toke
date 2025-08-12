@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/weedmaps/toke/internal/permission"
+	"github.com/chasedut/toke/internal/permission"
 )
 
 type DownloadParams struct {

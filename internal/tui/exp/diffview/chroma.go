@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/alecthomas/chroma/v2"
-	"github.com/weedmaps/toke/internal/ansiext"
+	"github.com/chasedut/toke/internal/ansiext"
 	"github.com/charmbracelet/lipgloss/v2"
 )
 

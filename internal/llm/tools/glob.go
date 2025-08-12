@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/weedmaps/toke/internal/fsext"
+	"github.com/chasedut/toke/internal/fsext"
 )
 
 const (

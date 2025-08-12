@@ -7,8 +7,8 @@ import (
 	"github.com/charmbracelet/bubbles/v2/spinner"
 	"github.com/charmbracelet/bubbles/v2/textinput"
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/tui/styles"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/tui/styles"
 	"github.com/charmbracelet/lipgloss/v2"
 )
 

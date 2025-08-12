@@ -8,8 +8,8 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/weedmaps/toke/internal/csync"
-	"github.com/weedmaps/toke/internal/pubsub"
+	"github.com/chasedut/toke/internal/csync"
+	"github.com/chasedut/toke/internal/pubsub"
 	"github.com/google/uuid"
 )
 

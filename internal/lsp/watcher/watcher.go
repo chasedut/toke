@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/csync"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/csync"
 
-	"github.com/weedmaps/toke/internal/lsp"
-	"github.com/weedmaps/toke/internal/lsp/protocol"
+	"github.com/chasedut/toke/internal/lsp"
+	"github.com/chasedut/toke/internal/lsp/protocol"
 	"github.com/fsnotify/fsnotify"
 )
 

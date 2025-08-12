@@ -1,4 +1,4 @@
-module github.com/weedmaps/toke
+module github.com/chasedut/toke
 
 go 1.24.3
 
@@ -46,6 +46,8 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	mvdan.cc/sh/v3 v3.12.1-0.20250726150758-e256f53bade8
 )
+
+require github.com/charmbracelet/harmonica v0.2.0 // indirect
 
 require (
 	cloud.google.com/go v0.116.0 // indirect

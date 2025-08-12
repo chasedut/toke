@@ -9,11 +9,11 @@ import (
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/fsext"
-	"github.com/weedmaps/toke/internal/history"
-	"github.com/weedmaps/toke/internal/tui/components/core"
-	"github.com/weedmaps/toke/internal/tui/styles"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/fsext"
+	"github.com/chasedut/toke/internal/history"
+	"github.com/chasedut/toke/internal/tui/components/core"
+	"github.com/chasedut/toke/internal/tui/styles"
 )
 
 // FileHistory represents a file history with initial and latest versions.

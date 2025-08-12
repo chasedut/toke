@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/llm/tools"
-	"github.com/weedmaps/toke/internal/message"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/llm/tools"
+	"github.com/chasedut/toke/internal/message"
 )
 
 type bedrockClient struct {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/weedmaps/toke/internal/log"
+	"github.com/chasedut/toke/internal/log"
 )
 
 var getRg = sync.OnceValue(func() string {
