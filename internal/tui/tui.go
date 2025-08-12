@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -278,6 +279,16 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.selectedSessionID = msg.ID
 	case cmpChat.SessionClearedMsg:
 		a.selectedSessionID = ""
+	
+	// Buddy events from web share
+	case webshare.BuddyEventMsg:
+		// Forward to chat page
+		page, pageCmd := a.pages[a.currentPage].Update(msg)
+		a.pages[a.currentPage] = page.(util.Model)
+		
+		// SSE client is now started automatically in startWebShare
+		
+		return a, tea.Batch(append(cmds, pageCmd)...)
 	// Commands
 	case commands.SwitchSessionsMsg:
 		return a, func() tea.Msg {
@@ -946,8 +957,11 @@ func findNgrokPath() string {
 // startWebShare starts the web sharing server for the session
 func (a *appModel) startWebShare(sessionID string) tea.Cmd {
 	return func() tea.Msg {
+		fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: Starting web share for session %s\n", sessionID)
+		
 		// Stop any existing web share
 		if a.webShare != nil {
+			fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: Stopping existing web share\n")
 			a.webShare.Stop()
 			// Notify sidebar to clear URLs
 			defer func() {
@@ -959,8 +973,13 @@ func (a *appModel) startWebShare(sessionID string) tea.Cmd {
 		}
 		
 		// Create new web share
+		fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: Creating new SessionShare\n")
 		a.webShare = webshare.NewSessionShare(sessionID)
+		
+		fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: Calling webShare.Start()\n")
 		urls, err := a.webShare.Start()
+		fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: webShare.Start() returned, err=%v\n", err)
+		
 		if err != nil {
 			// Check if the error is about ngrok authentication
 			if strings.Contains(err.Error(), "ngrok authentication required") {
@@ -985,28 +1004,32 @@ func (a *appModel) startWebShare(sessionID string) tea.Cmd {
 		}
 		
 		// Start a goroutine to periodically broadcast updates
-		go func() {
-			ticker := time.NewTicker(2 * time.Second)
-			defer ticker.Stop()
-			
-			for {
-				select {
-				case <-ticker.C:
-					if a.webShare != nil {
-						a.webShare.BroadcastUpdate()
-					}
-				}
-			}
-		}()
+		// Use the webShare's context to properly stop the goroutine
+		fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: Starting broadcast loop\n")
+		if a.webShare != nil {
+			go a.webShare.StartBroadcastLoop()
+		}
 		
+		// Start SSE client in a goroutine (non-blocking)
+		if urls != nil && urls.LocalURL != "" {
+			fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: Starting SSE client for %s\n", urls.LocalURL)
+			// Note: We need the tea.Program instance to send messages back
+			// For now, we'll start it without program and rely on polling
+			sseClient := webshare.NewSSEClient(urls.LocalURL, nil)
+			sseClient.Start()
+		}
+		
+		fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: Creating batch commands\n")
 		// Return both the dialog and a message to update the sidebar
 		return tea.Batch(
 			func() tea.Msg {
+				fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: Returning OpenDialogMsg\n")
 				return dialogs.OpenDialogMsg{
 					Model: webshareDialog.NewShareDialog(sessionID, urls),
 				}
 			},
 			func() tea.Msg {
+				fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: Returning WebShareStartedMsg\n")
 				localURL := ""
 				ngrokURL := ""
 				if urls != nil {
@@ -1016,6 +1039,7 @@ func (a *appModel) startWebShare(sessionID string) tea.Cmd {
 				return commands.WebShareStartedMsg{
 					LocalURL: localURL,
 					NgrokURL: ngrokURL,
+					WebShare: a.webShare,
 				}
 			},
 		)()

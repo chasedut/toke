@@ -81,6 +81,7 @@ type (
 	WebShareStartedMsg    struct {
 		LocalURL string
 		NgrokURL string
+		WebShare interface{} // The webshare.SessionShare instance
 	}
 	WebShareStoppedMsg    struct{}
 )

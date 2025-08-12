@@ -19,6 +19,7 @@ import (
 	"github.com/chasedut/toke/internal/tui/components/chat"
 	"github.com/chasedut/toke/internal/tui/components/chat/editor"
 	"github.com/chasedut/toke/internal/tui/components/chat/header"
+	"github.com/chasedut/toke/internal/tui/components/chat/buddychat"
 	"github.com/chasedut/toke/internal/tui/components/chat/messages"
 	"github.com/chasedut/toke/internal/tui/components/chat/sidebar"
 	"github.com/chasedut/toke/internal/tui/components/chat/splash"
@@ -32,6 +33,7 @@ import (
 	"github.com/chasedut/toke/internal/tui/styles"
 	"github.com/chasedut/toke/internal/tui/util"
 	"github.com/chasedut/toke/internal/version"
+	"github.com/chasedut/toke/internal/webshare"
 	"github.com/charmbracelet/lipgloss/v2"
 )
 
@@ -99,11 +101,12 @@ type chatPage struct {
 	keyMap  KeyMap
 
 	// Components
-	header  header.Header
-	sidebar sidebar.Sidebar
-	chat    chat.MessageListCmp
-	editor  editor.Editor
-	splash  splash.Splash
+	header    header.Header
+	sidebar   sidebar.Sidebar
+	chat      chat.MessageListCmp
+	editor    editor.Editor
+	splash    splash.Splash
+	buddyChat *buddychat.BuddyChatComponent
 
 	// Simple state flags
 	showingDetails   bool
@@ -122,6 +125,7 @@ func New(app *app.App) ChatPage {
 		chat:        chat.New(app),
 		editor:      editor.New(app),
 		splash:      splash.New(),
+		buddyChat:   buddychat.New(),
 		focusedPane: PanelTypeSplash,
 	}
 }
@@ -252,14 +256,91 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		u, cmd := p.editor.Update(msg)
 		p.editor = u.(editor.Editor)
 		return p, cmd
+	case webshare.BuddyEventMsg:
+		// Convert webshare buddy event to buddy chat messages
+		switch msg.Type {
+		case "joined":
+			if p.buddyChat != nil && msg.Buddy != nil {
+				u, cmd := p.buddyChat.Update(buddychat.BuddyJoinedMsg{Buddy: msg.Buddy})
+				p.buddyChat = u
+				// Update sidebar with buddy info
+				if p.sidebar != nil {
+					buddies := []string{msg.Buddy.Name}
+					count := p.buddyChat.GetBuddyCount()
+					p.sidebar.SetBuddyInfo(count, buddies)
+				}
+				return p, cmd
+			}
+		case "message":
+			if p.buddyChat != nil {
+				u, cmd := p.buddyChat.Update(buddychat.BuddyMessageMsg{Message: msg.Message})
+				p.buddyChat = u
+				return p, cmd
+			}
+		}
+		return p, nil
+	case buddychat.BuddyJoinedMsg:
+		if p.buddyChat != nil {
+			u, cmd := p.buddyChat.Update(msg)
+			p.buddyChat = u
+			cmds = append(cmds, cmd)
+		}
+		// Update sidebar with buddy info
+		if p.sidebar != nil {
+			buddies := []string{}
+			if p.buddyChat != nil {
+				count := p.buddyChat.GetBuddyCount()
+				// Get buddy names from buddy chat
+				p.sidebar.SetBuddyInfo(count, buddies)
+			}
+		}
+		return p, tea.Batch(cmds...)
+	case buddychat.BuddyMessageMsg:
+		if p.buddyChat != nil {
+			u, cmd := p.buddyChat.Update(msg)
+			p.buddyChat = u
+			return p, cmd
+		}
 	case commands.WebShareStartedMsg:
 		// Update sidebar with web share URLs
 		p.sidebar.SetWebShareURLs(msg.LocalURL, msg.NgrokURL)
+		// Pass webShare to buddy chat if available
+		if msg.WebShare != nil && p.buddyChat != nil {
+			if share, ok := msg.WebShare.(*webshare.SessionShare); ok {
+				p.buddyChat.SetShare(share)
+				// Start polling for buddy messages
+				return p, p.pollBuddyMessages()
+			}
+		}
 		return p, nil
 	case commands.WebShareStoppedMsg:
 		// Clear web share URLs from sidebar
 		p.sidebar.SetWebShareURLs("", "")
 		return p, nil
+	case BuddyMessagePollMsg:
+		// Poll for buddy messages if we have a share
+		if p.buddyChat != nil && p.buddyChat.GetShare() != nil {
+			share := p.buddyChat.GetShare()
+			messages := share.GetPendingMessages()
+			for _, msg := range messages {
+				u, cmd := p.buddyChat.Update(buddychat.BuddyMessageMsg{Message: msg})
+				p.buddyChat = u
+				cmds = append(cmds, cmd)
+			}
+			// Also check for new buddies
+			buddies := share.GetBuddies()
+			if len(buddies) != p.buddyChat.GetBuddyCount() {
+				// Update buddy list
+				for _, buddy := range buddies {
+					u, cmd := p.buddyChat.Update(buddychat.BuddyJoinedMsg{Buddy: buddy})
+					p.buddyChat = u
+					cmds = append(cmds, cmd)
+				}
+			}
+			// Continue polling
+			cmds = append(cmds, p.pollBuddyMessages())
+		}
+		return p, tea.Batch(cmds...)
 	case pubsub.Event[session.Session]:
 		u, cmd := p.header.Update(msg)
 		p.header = u.(header.Header)
@@ -387,6 +468,59 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, p.keyMap.Details):
 			p.toggleDetails()
 			return p, nil
+		case key.Matches(msg, p.keyMap.ShiftTab):
+			// Focus buddy chat if it has buddies
+			if p.buddyChat != nil && p.buddyChat.GetBuddyCount() > 0 {
+				// Make sure buddy chat is visible
+				if !p.buddyChat.IsVisible() {
+					p.buddyChat.SetVisible(true)
+				}
+				// Focus buddy chat
+				p.focusedPane = PanelType("buddychat")
+				p.editor.Blur()
+				p.chat.Blur()
+				cmd := p.buddyChat.Focus()
+				return p, cmd
+			}
+			return p, nil
+		case key.Matches(msg, p.keyMap.BuddyChat):
+			if p.buddyChat != nil {
+				// Toggle buddy chat visibility
+				u, cmd := p.buddyChat.Update(buddychat.ToggleBuddyChatMsg{})
+				p.buddyChat = u
+				
+				// If buddy chat is now visible, change focus to it
+				if p.buddyChat.IsVisible() {
+					p.focusedPane = PanelType("buddychat")
+					p.editor.Blur()
+					p.chat.Blur()
+					// Update sidebar to show buddy chat is active
+					if p.sidebar != nil {
+						p.sidebar.SetBuddyInfo(0, []string{"Chat is active - type messages below"})
+					}
+				} else {
+					// Return focus to editor
+					p.focusedPane = PanelTypeEditor
+					p.editor.Focus()
+				}
+				
+				return p, cmd
+			}
+			return p, nil
+		}
+
+		// Handle buddy chat input when focused
+		if p.focusedPane == PanelType("buddychat") && p.buddyChat != nil && p.buddyChat.IsVisible() {
+			// Allow Tab, Shift+Tab or Esc to return focus to editor
+			if key.Matches(msg, p.keyMap.Tab) || key.Matches(msg, p.keyMap.ShiftTab) || msg.String() == "esc" {
+				p.focusedPane = PanelTypeEditor
+				p.buddyChat.Blur()
+				p.editor.Focus()
+				return p, nil
+			}
+			u, cmd := p.buddyChat.Update(msg)
+			p.buddyChat = u
+			return p, cmd
 		}
 
 		switch p.focusedPane {
@@ -487,6 +621,15 @@ func (p *chatPage) View() string {
 		lipgloss.NewLayer(chatView).X(0).Y(0),
 	}
 
+	// Add buddy chat overlay if visible
+	if p.buddyChat != nil && p.buddyChat.IsVisible() {
+		buddyChatView := p.buddyChat.View()
+		// Position in bottom right corner
+		x := p.width - (p.width / 3) - 2
+		y := p.height - (p.height / 3) - 2
+		layers = append(layers, lipgloss.NewLayer(buddyChatView).X(x).Y(y))
+	}
+
 	if p.showingDetails {
 		style := t.S().Base.
 			Width(p.detailsWidth).
@@ -579,6 +722,13 @@ func (p *chatPage) SetSize(width, height int) tea.Cmd {
 	p.width = width
 	p.height = height
 	var cmds []tea.Cmd
+
+	// Update buddy chat size
+	if p.buddyChat != nil {
+		u, cmd := p.buddyChat.Update(tea.WindowSizeMsg{Width: width, Height: height})
+		p.buddyChat = u
+		cmds = append(cmds, cmd)
+	}
 
 	if p.session.ID == "" {
 		if p.splashFullScreen {
@@ -697,6 +847,16 @@ func (p *chatPage) sendMessage(text string, attachments []message.Attachment) te
 	}
 	cmds = append(cmds, p.chat.GoToBottom())
 	return tea.Batch(cmds...)
+}
+
+// BuddyMessagePollMsg is sent when polling for buddy messages
+type BuddyMessagePollMsg struct{}
+
+// pollBuddyMessages starts polling for buddy messages
+func (p *chatPage) pollBuddyMessages() tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg {
+		return BuddyMessagePollMsg{}
+	})
 }
 
 func (p *chatPage) Bindings() []key.Binding {

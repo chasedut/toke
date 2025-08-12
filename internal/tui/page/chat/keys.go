@@ -5,11 +5,13 @@ import (
 )
 
 type KeyMap struct {
-	NewSession    key.Binding
-	AddAttachment key.Binding
-	Cancel        key.Binding
-	Tab           key.Binding
-	Details       key.Binding
+	NewSession       key.Binding
+	AddAttachment    key.Binding
+	Cancel           key.Binding
+	Tab              key.Binding
+	ShiftTab         key.Binding
+	Details          key.Binding
+	BuddyChat        key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -30,9 +32,17 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("tab"),
 			key.WithHelp("tab", "change focus"),
 		),
+		ShiftTab: key.NewBinding(
+			key.WithKeys("shift+tab"),
+			key.WithHelp("shift+tab", "focus buddy chat"),
+		),
 		Details: key.NewBinding(
 			key.WithKeys("ctrl+d"),
 			key.WithHelp("ctrl+d", "toggle details"),
+		),
+		BuddyChat: key.NewBinding(
+			key.WithKeys("ctrl+b"),
+			key.WithHelp("ctrl+b", "toggle buddy chat"),
 		),
 	}
 }

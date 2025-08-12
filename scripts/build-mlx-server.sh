@@ -17,9 +17,9 @@ mkdir -p "${OUTPUT_DIR}"
 
 cd "${BUILD_DIR}"
 
-# Create a minimal Python virtual environment using Python 3.12 (ARM64)
+# Create a minimal Python virtual environment using Python 3 (ARM64)
 echo "Creating Python environment..."
-/opt/homebrew/bin/python3.12 -m venv mlx-env
+/opt/homebrew/bin/python3 -m venv mlx-env
 
 # Activate the environment
 source mlx-env/bin/activate
@@ -29,7 +29,7 @@ pip install --upgrade pip
 
 # Install MLX and dependencies
 echo "Installing MLX and dependencies..."
-pip install mlx mlx-lm fastapi uvicorn pydantic
+pip install mlx mlx-lm fastapi uvicorn pydantic psutil
 
 # Create the MLX server Python script
 cat > mlx_server.py << 'EOF'
@@ -123,13 +123,16 @@ async def chat_completions(request: ChatCompletionRequest):
             prompt += f"Assistant: {msg.content}\n"
     prompt += "Assistant: "
     
-    # Generate response
+    # Generate response with better memory management
+    # For 8-bit models, we can handle larger contexts
     response = generate(
         model,
         tokenizer,
         prompt=prompt,
-        max_tokens=request.max_tokens,
+        max_tokens=request.max_tokens or 4096,
         temp=request.temperature,
+        verbose=False,  # Reduce logging for production
+        top_p=0.95,  # Add nucleus sampling for better quality
     )
     
     # Format response
@@ -154,12 +157,31 @@ async def chat_completions(request: ChatCompletionRequest):
         }
     )
 
-def load_model(model_path: str):
+def load_model(model_path: str, trust_remote_code: bool = False):
     global model, tokenizer, model_id
     print(f"Loading model from {model_path}...")
-    model, tokenizer = load(model_path)
+    
+    # Load with appropriate settings for different quantization types
+    # MLX automatically handles 3-bit, 4-bit, 8-bit, and 16-bit models
+    model, tokenizer = load(
+        model_path, 
+        lazy=True,  # Use lazy loading for large models
+        trust_remote_code=trust_remote_code
+    )
+    
+    # Set model ID from path
     model_id = Path(model_path).name
+    
+    # Print model info
     print(f"Model loaded: {model_id}")
+    
+    # Estimate memory usage for different quantization levels
+    try:
+        import psutil
+        mem = psutil.virtual_memory()
+        print(f"Available memory: {mem.available / (1024**3):.1f} GB")
+    except:
+        pass
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="MLX Server")
@@ -172,7 +194,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # Load the model
-    load_model(args.model)
+    load_model(args.model, trust_remote_code=args.trust_remote_code)
     
     # Start the server
     print(f"Starting server on {args.host}:{args.port}")

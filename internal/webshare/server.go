@@ -29,6 +29,22 @@ type SessionShare struct {
 	cancel       context.CancelFunc
 	ngrokProcess *exec.Cmd
 	sseClients   map[chan string]bool
+	buddies      map[string]*Buddy  // Track connected buddies
+	buddyMsgChan chan BuddyMessage  // Channel for buddy messages
+}
+
+type Buddy struct {
+	ID       string
+	Name     string
+	JoinedAt time.Time
+}
+
+type BuddyMessage struct {
+	FromID   string    `json:"from_id"`
+	FromName string    `json:"from_name"`
+	ToID     string    `json:"to_id"`
+	Message  string    `json:"message"`
+	Time     time.Time `json:"time"`
 }
 
 type ShareURLs struct {
@@ -54,54 +70,94 @@ type MessageData struct {
 
 func NewSessionShare(sessionID string) *SessionShare {
 	return &SessionShare{
-		sessionID:  sessionID,
-		sseClients: make(map[chan string]bool),
+		sessionID:    sessionID,
+		sseClients:   make(map[chan string]bool),
+		buddies:      make(map[string]*Buddy),
+		buddyMsgChan: make(chan BuddyMessage, 100),
 	}
 }
 
 func (s *SessionShare) Start() (*ShareURLs, error) {
+	fmt.Fprintf(os.Stderr, "[DEBUG] SessionShare.Start: Starting\n")
+	
 	ctx, cancel := context.WithCancel(context.Background())
 	s.ctx = ctx
 	s.cancel = cancel
 
-	// Find an available port
-	listener, err := net.Listen("tcp", ":0")
-	if err != nil {
-		return nil, fmt.Errorf("failed to find available port: %w", err)
-	}
-	s.port = listener.Addr().(*net.TCPAddr).Port
-	listener.Close()
-
 	// Set up HTTP endpoints
+	fmt.Fprintf(os.Stderr, "[DEBUG] SessionShare.Start: Setting up HTTP endpoints\n")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleHome)
 	mux.HandleFunc("/api/messages", s.handleMessagesAPI)
 	mux.HandleFunc("/events", s.handleSSE)
+	mux.HandleFunc("/api/buddy/join", s.handleBuddyJoin)
+	mux.HandleFunc("/api/buddy/message", s.handleBuddyMessage)
+	mux.HandleFunc("/api/buddy/list", s.handleBuddyList)
 
+	// Find an available port and start server
+	listener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG] SessionShare.Start: Failed to create listener: %v\n", err)
+		return nil, fmt.Errorf("failed to create listener: %w", err)
+	}
+	
+	s.port = listener.Addr().(*net.TCPAddr).Port
+	fmt.Fprintf(os.Stderr, "[DEBUG] SessionShare.Start: Got port %d\n", s.port)
+	
 	s.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", s.port),
+		Addr:    fmt.Sprintf("localhost:%d", s.port),
 		Handler: mux,
 	}
 
-	// Start the server
+	// Start server in background
 	go func() {
+		fmt.Fprintf(os.Stderr, "[DEBUG] SessionShare.Start: Starting server on localhost:%d\n", s.port)
+		// Close the temporary listener first
+		listener.Close()
+		// Start the actual server
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			fmt.Printf("Server error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "[DEBUG] Server error: %v\n", err)
 		}
 	}()
 
-	// Get local URL
-	s.localURL = fmt.Sprintf("http://localhost:%d", s.port)
-
-	// Start ngrok
-	if err := s.startNgrok(); err != nil {
-		// Non-fatal - continue without ngrok
-		fmt.Printf("Warning: Failed to start ngrok: %v\n", err)
+	// Wait for server to start
+	time.Sleep(500 * time.Millisecond)
+	
+	// Verify server is running
+	for i := 0; i < 5; i++ {
+		testConn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", s.port))
+		if err == nil {
+			testConn.Close()
+			fmt.Fprintf(os.Stderr, "[DEBUG] SessionShare.Start: Server verified on port %d\n", s.port)
+			break
+		}
+		if i == 4 {
+			fmt.Fprintf(os.Stderr, "[DEBUG] SessionShare.Start: WARNING - Server not responding on port %d after 5 attempts\n", s.port)
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
 
+	// Get local URL
+	s.localURL = fmt.Sprintf("http://localhost:%d", s.port)
+	fmt.Fprintf(os.Stderr, "[DEBUG] SessionShare.Start: Local URL: %s\n", s.localURL)
+
+	// Start ngrok asynchronously
+	fmt.Fprintf(os.Stderr, "[DEBUG] SessionShare.Start: Starting ngrok async\n")
+	go func() {
+		fmt.Fprintf(os.Stderr, "[DEBUG] SessionShare.Start: ngrok goroutine started\n")
+		if err := s.startNgrok(); err != nil {
+			// Non-fatal - continue without ngrok
+			fmt.Fprintf(os.Stderr, "[DEBUG] Warning: Failed to start ngrok: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "[DEBUG] SessionShare.Start: ngrok started successfully, URL: %s\n", s.ngrokURL)
+		}
+	}()
+
+	// Return immediately with local URL, ngrok URL will be populated later
+	fmt.Fprintf(os.Stderr, "[DEBUG] SessionShare.Start: Returning URLs\n")
 	return &ShareURLs{
 		LocalURL: s.localURL,
-		NgrokURL: s.ngrokURL,
+		NgrokURL: "", // Will be populated asynchronously
 	}, nil
 }
 
@@ -276,47 +332,69 @@ func (s *SessionShare) startNgrok() error {
 	}
 
 	// Start ngrok
+	ngrokCmd := fmt.Sprintf("%s http %d", ngrokPath, s.port)
+	fmt.Fprintf(os.Stderr, "[DEBUG] startNgrok: Running command: %s\n", ngrokCmd)
 	s.ngrokProcess = exec.CommandContext(s.ctx, ngrokPath, "http", fmt.Sprintf("%d", s.port))
 	if err := s.ngrokProcess.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG] startNgrok: Failed to start ngrok: %v\n", err)
 		return fmt.Errorf("failed to start ngrok: %w", err)
 	}
+	fmt.Fprintf(os.Stderr, "[DEBUG] startNgrok: ngrok process started, PID: %d\n", s.ngrokProcess.Process.Pid)
 
-	// Wait a moment for ngrok to start
-	time.Sleep(2 * time.Second)
+	// Retry getting ngrok URL with exponential backoff
+	maxRetries := 5
+	for i := 0; i < maxRetries; i++ {
+		// Wait before checking (exponential backoff)
+		time.Sleep(time.Duration(500*(i+1)) * time.Millisecond)
+		
+		// Get ngrok URL from API
+		resp, err := http.Get("http://localhost:4040/api/tunnels")
+		if err != nil {
+			if i == maxRetries-1 {
+				return fmt.Errorf("failed to get ngrok tunnels after %d retries: %w", maxRetries, err)
+			}
+			continue // Retry
+		}
+		
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			if i == maxRetries-1 {
+				return fmt.Errorf("failed to read ngrok response: %w", err)
+			}
+			continue // Retry
+		}
 
-	// Get ngrok URL from API
-	resp, err := http.Get("http://localhost:4040/api/tunnels")
-	if err != nil {
-		return fmt.Errorf("failed to get ngrok tunnels: %w", err)
-	}
-	defer resp.Body.Close()
+		var tunnels struct {
+			Tunnels []struct {
+				PublicURL string `json:"public_url"`
+				Proto     string `json:"proto"`
+			} `json:"tunnels"`
+		}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read ngrok response: %w", err)
-	}
+		if err := json.Unmarshal(body, &tunnels); err != nil {
+			if i == maxRetries-1 {
+				return fmt.Errorf("failed to parse ngrok response: %w", err)
+			}
+			continue // Retry
+		}
 
-	var tunnels struct {
-		Tunnels []struct {
-			PublicURL string `json:"public_url"`
-			Proto     string `json:"proto"`
-		} `json:"tunnels"`
-	}
+		// Find HTTPS tunnel
+		for _, tunnel := range tunnels.Tunnels {
+			if tunnel.Proto == "https" {
+				s.ngrokURL = tunnel.PublicURL
+				break
+			}
+		}
 
-	if err := json.Unmarshal(body, &tunnels); err != nil {
-		return fmt.Errorf("failed to parse ngrok response: %w", err)
-	}
-
-	// Find HTTPS tunnel
-	for _, tunnel := range tunnels.Tunnels {
-		if tunnel.Proto == "https" {
-			s.ngrokURL = tunnel.PublicURL
+		if s.ngrokURL == "" && len(tunnels.Tunnels) > 0 {
+			s.ngrokURL = tunnels.Tunnels[0].PublicURL
+		}
+		
+		// If we got a URL, we're done
+		if s.ngrokURL != "" {
 			break
 		}
-	}
-
-	if s.ngrokURL == "" && len(tunnels.Tunnels) > 0 {
-		s.ngrokURL = tunnels.Tunnels[0].PublicURL
 	}
 
 	return nil
@@ -345,10 +423,172 @@ func (s *SessionShare) Stop() error {
 	return nil
 }
 
+// StartBroadcastLoop starts a goroutine that periodically broadcasts updates
+func (s *SessionShare) StartBroadcastLoop() {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-ticker.C:
+			s.BroadcastUpdate()
+		case <-s.ctx.Done():
+			// Context cancelled, exit the goroutine
+			return
+		}
+	}
+}
+
 func (s *SessionShare) GetURLs() *ShareURLs {
 	return &ShareURLs{
 		LocalURL: s.localURL,
 		NgrokURL: s.ngrokURL,
+	}
+}
+
+// GetNgrokURL returns the current ngrok URL (may be empty if still starting)
+func (s *SessionShare) GetNgrokURL() string {
+	return s.ngrokURL
+}
+
+// Buddy chat handlers
+func (s *SessionShare) handleBuddyJoin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// Generate buddy ID
+	buddyID := fmt.Sprintf("buddy_%d", time.Now().UnixNano())
+	
+	buddy := &Buddy{
+		ID:       buddyID,
+		Name:     req.Name,
+		JoinedAt: time.Now(),
+	}
+	
+	s.buddies[buddyID] = buddy
+	
+	// Broadcast buddy joined event
+	s.broadcastBuddyEvent("buddy_joined", buddy)
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"id":   buddyID,
+		"name": buddy.Name,
+	})
+}
+
+func (s *SessionShare) handleBuddyMessage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var msg BuddyMessage
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	
+	msg.Time = time.Now()
+	
+	// Broadcast buddy message
+	s.broadcastBuddyMessage(msg)
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (s *SessionShare) handleBuddyList(w http.ResponseWriter, r *http.Request) {
+	buddyList := make([]*Buddy, 0, len(s.buddies))
+	for _, buddy := range s.buddies {
+		buddyList = append(buddyList, buddy)
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(buddyList)
+}
+
+func (s *SessionShare) broadcastBuddyEvent(eventType string, buddy *Buddy) {
+	data, _ := json.Marshal(map[string]interface{}{
+		"type":      eventType,
+		"buddy":     buddy,
+		"timestamp": time.Now().Format("15:04:05"),
+	})
+	
+	for client := range s.sseClients {
+		select {
+		case client <- string(data):
+		default:
+		}
+	}
+}
+
+func (s *SessionShare) broadcastBuddyMessage(msg BuddyMessage) {
+	// Store message in channel for TUI polling
+	select {
+	case s.buddyMsgChan <- msg:
+	default:
+		// Channel full, skip
+	}
+	
+	// Broadcast to SSE clients
+	data, _ := json.Marshal(map[string]interface{}{
+		"type":    "buddy_message",
+		"message": msg,
+	})
+	
+	for client := range s.sseClients {
+		select {
+		case client <- string(data):
+		default:
+		}
+	}
+}
+
+// GetBuddies returns the list of connected buddies
+func (s *SessionShare) GetBuddies() []*Buddy {
+	buddyList := make([]*Buddy, 0, len(s.buddies))
+	for _, buddy := range s.buddies {
+		buddyList = append(buddyList, buddy)
+	}
+	return buddyList
+}
+
+// SendMessageToBuddy sends a message from the host to a buddy
+func (s *SessionShare) SendMessageToBuddy(buddyID, message string) {
+	msg := BuddyMessage{
+		FromID:   "host",
+		FromName: "Host",
+		ToID:     buddyID,
+		Message:  message,
+		Time:     time.Now(),
+	}
+	s.broadcastBuddyMessage(msg)
+}
+
+// GetPendingMessages returns any pending buddy messages (for polling)
+func (s *SessionShare) GetPendingMessages() []BuddyMessage {
+	messages := make([]BuddyMessage, 0)
+	
+	// Try to get messages from channel without blocking
+	for {
+		select {
+		case msg := <-s.buddyMsgChan:
+			messages = append(messages, msg)
+		default:
+			// No more messages
+			return messages
+		}
 	}
 }
 
@@ -448,53 +688,88 @@ func (s *SessionShare) findNgrok() string {
 	return ""
 }
 
-// extractTextFromJSONParts extracts plain text from JSON message parts
+// extractTextFromJSONParts extracts and formats text from JSON message parts
 func extractTextFromJSONParts(partsJSON string) string {
-	var parts []map[string]interface{}
-	if err := json.Unmarshal([]byte(partsJSON), &parts); err == nil {
-		var textParts []string
-		for _, part := range parts {
-			if partType, ok := part["type"].(string); ok {
-				switch partType {
-				case "text":
-					if text, ok := part["text"].(string); ok {
-						textParts = append(textParts, text)
-					}
-				case "data":
-					if data, ok := part["data"].(map[string]interface{}); ok {
-						if text, ok := data["text"].(string); ok {
-							textParts = append(textParts, text)
-						}
-					}
+	var parts []interface{}
+	if err := json.Unmarshal([]byte(partsJSON), &parts); err != nil {
+		return "Error parsing message"
+	}
+	
+	var output []string
+	for _, p := range parts {
+		part, ok := p.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		
+		partType, _ := part["type"].(string)
+		
+		switch partType {
+		case "text":
+			// Handle text parts
+			if data, ok := part["data"].(map[string]interface{}); ok {
+				if text, ok := data["text"].(string); ok {
+					output = append(output, text)
 				}
-			} else if partData, ok := part["data"].(map[string]interface{}); ok {
-				// Handle the structure from your screenshot
-				if text, ok := partData["text"].(string); ok {
-					textParts = append(textParts, text)
+			} else if text, ok := part["text"].(string); ok {
+				output = append(output, text)
+			}
+			
+		case "tool_call":
+			// Format tool calls nicely
+			if data, ok := part["data"].(map[string]interface{}); ok {
+				toolName, _ := data["name"].(string)
+				output = append(output, fmt.Sprintf("\n🔧 Using tool: %s\n", toolName))
+				
+				// Optionally show input in a code block
+				if input, ok := data["input"].(map[string]interface{}); ok {
+					if len(input) > 0 {
+						inputJSON, _ := json.MarshalIndent(input, "", "  ")
+						output = append(output, fmt.Sprintf("```json\n%s\n```\n", string(inputJSON)))
+					}
 				}
 			}
-		}
-		if len(textParts) > 0 {
-			return textParts[0] // Return first text part for initial display
+			
+		case "tool_use":
+			// Legacy tool use format
+			if name, ok := part["name"].(string); ok {
+				output = append(output, fmt.Sprintf("\n🔧 Using tool: %s\n", name))
+			}
+			
+		case "tool_result":
+			// Format tool results
+			if data, ok := part["data"].(map[string]interface{}); ok {
+				if content, ok := data["content"].(string); ok {
+					// Truncate very long outputs
+					if len(content) > 500 {
+						content = content[:500] + "...\n[Output truncated]"
+					}
+					output = append(output, fmt.Sprintf("```\n%s\n```\n", content))
+				}
+			} else if content, ok := part["content"].(string); ok {
+				if len(content) > 500 {
+					content = content[:500] + "...\n[Output truncated]"
+				}
+				output = append(output, fmt.Sprintf("```\n%s\n```\n", content))
+			}
+			
+		case "finish":
+			// Handle finish messages
+			if data, ok := part["data"].(map[string]interface{}); ok {
+				if reason, ok := data["reason"].(string); ok && reason == "stop" {
+					// Normal completion, don't show anything
+				} else if reason == "error" {
+					output = append(output, "\n❌ An error occurred")
+				}
+			}
 		}
 	}
 	
-	// Try as single object
-	var singlePart map[string]interface{}
-	if err := json.Unmarshal([]byte(partsJSON), &singlePart); err == nil {
-		if data, ok := singlePart["data"].(map[string]interface{}); ok {
-			if text, ok := data["text"].(string); ok {
-				return text
-			}
-		}
-		if partType, ok := singlePart["type"].(string); ok && partType == "text" {
-			if text, ok := singlePart["text"].(string); ok {
-				return text
-			}
-		}
+	if len(output) == 0 {
+		return "No content to display"
 	}
 	
-	return partsJSON // Fallback to raw content
+	return strings.Join(output, "\n")
 }
 
 const htmlTemplate = `<!DOCTYPE html>
@@ -1098,6 +1373,164 @@ const htmlTemplate = `<!DOCTYPE html>
             border-color: var(--success);
             color: white;
         }
+        /* Buddy Chat Styles */
+        .buddy-chat-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 350px;
+            max-height: 500px;
+            background: var(--background-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            transition: all 0.3s ease;
+        }
+        
+        .buddy-chat-container.collapsed {
+            height: 50px;
+            max-height: 50px;
+        }
+        
+        .buddy-chat-header {
+            padding: 1rem;
+            background: var(--background-tertiary);
+            border-radius: 12px 12px 0 0;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .buddy-chat-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .buddy-status {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+        
+        .buddy-join-form {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .buddy-join-form input {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--background-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+        }
+        
+        .buddy-join-form button {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--accent-gradient);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        
+        .buddy-join-form button:hover {
+            opacity: 0.9;
+        }
+        
+        .buddy-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            max-height: 300px;
+        }
+        
+        .buddy-message {
+            margin-bottom: 1rem;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        .buddy-message-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .buddy-message-name {
+            font-weight: 600;
+            color: var(--accent-secondary);
+            font-size: 0.875rem;
+        }
+        
+        .buddy-message-time {
+            font-size: 0.75rem;
+            color: var(--text-tertiary);
+        }
+        
+        .buddy-message-text {
+            color: var(--text-primary);
+            font-size: 0.875rem;
+            padding: 0.5rem;
+            background: var(--background-primary);
+            border-radius: 8px;
+            word-wrap: break-word;
+        }
+        
+        .buddy-message.host .buddy-message-name {
+            color: var(--accent-primary);
+        }
+        
+        .buddy-input-container {
+            padding: 1rem;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .buddy-input {
+            flex: 1;
+            padding: 0.5rem;
+            background: var(--background-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+        }
+        
+        .buddy-send-btn {
+            padding: 0.5rem 1rem;
+            background: var(--accent-gradient);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        
+        .buddy-send-btn:hover {
+            opacity: 0.9;
+        }
+        
+        .buddy-chat-container.hidden {
+            display: none;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
 </head>
 <body>
@@ -1149,6 +1582,32 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
     </main>
     
+    <!-- Buddy Chat -->
+    <div class="buddy-chat-container" id="buddyChat">
+        <div class="buddy-chat-header" onclick="toggleBuddyChat()">
+            <div class="buddy-chat-title">
+                💬 Buddy Chat
+                <span class="buddy-status" id="buddyStatus">Not connected</span>
+            </div>
+            <span id="toggleIcon">▼</span>
+        </div>
+        
+        <!-- Join Form (shown when not connected) -->
+        <div class="buddy-join-form" id="buddyJoinForm">
+            <input type="text" id="buddyName" placeholder="Enter your name" maxlength="20">
+            <button onclick="joinBuddyChat()">Join Chat</button>
+        </div>
+        
+        <!-- Chat Interface (shown when connected) -->
+        <div id="buddyChatInterface" style="display: none; flex: 1; display: flex; flex-direction: column;">
+            <div class="buddy-messages" id="buddyMessages"></div>
+            <div class="buddy-input-container">
+                <input type="text" class="buddy-input" id="buddyMessageInput" placeholder="Type a message..." onkeypress="if(event.key==='Enter') sendBuddyMessage()">
+                <button class="buddy-send-btn" onclick="sendBuddyMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+    
     <script>
         let lastMessageCount = {{len .Messages}};
         let eventSource;
@@ -1193,11 +1652,11 @@ const htmlTemplate = `<!DOCTYPE html>
             }
         }
         
-        // Render markdown to HTML
+        // Render markdown to HTML with better formatting
         function renderMarkdown(text) {
             if (!text) return '';
             
-            // Escape HTML
+            // Escape HTML first
             text = text.replace(/&/g, '&amp;')
                       .replace(/</g, '&lt;')
                       .replace(/>/g, '&gt;')
@@ -1493,6 +1952,16 @@ const htmlTemplate = `<!DOCTYPE html>
             const main = document.querySelector('main');
             main.addEventListener('scroll', checkScrollPosition);
             
+            // Process existing messages to render markdown properly
+            document.querySelectorAll('.message-content').forEach(content => {
+                const text = content.textContent;
+                // Re-render with proper markdown
+                if (text && !content.dataset.processed) {
+                    content.innerHTML = renderMarkdown(text);
+                    content.dataset.processed = 'true';
+                }
+            });
+            
             // Add copy buttons to existing code blocks
             document.querySelectorAll('pre').forEach(pre => {
                 addCopyButton(pre);
@@ -1514,6 +1983,125 @@ const htmlTemplate = `<!DOCTYPE html>
                 connectSSE();
             }
         });
+        
+        // ===== BUDDY CHAT FUNCTIONALITY =====
+        
+        let buddyId = null;
+        let buddyName = null;
+        let isChatCollapsed = false;
+        
+        function toggleBuddyChat() {
+            const chat = document.getElementById('buddyChat');
+            const icon = document.getElementById('toggleIcon');
+            isChatCollapsed = !isChatCollapsed;
+            
+            if (isChatCollapsed) {
+                chat.classList.add('collapsed');
+                icon.textContent = '▲';
+            } else {
+                chat.classList.remove('collapsed');
+                icon.textContent = '▼';
+            }
+        }
+        
+        function joinBuddyChat() {
+            const nameInput = document.getElementById('buddyName');
+            const name = nameInput.value.trim();
+            
+            if (!name) {
+                alert('Please enter your name');
+                return;
+            }
+            
+            // Join as buddy
+            fetch('/api/buddy/join', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name: name})
+            })
+            .then(res => res.json())
+            .then(data => {
+                buddyId = data.id;
+                buddyName = data.name;
+                
+                // Update UI
+                document.getElementById('buddyStatus').textContent = 'Connected as ' + buddyName;
+                document.getElementById('buddyJoinForm').style.display = 'none';
+                document.getElementById('buddyChatInterface').style.display = 'flex';
+                
+                // Notify host via SSE
+                console.log('Joined as buddy:', buddyName);
+            })
+            .catch(err => {
+                console.error('Failed to join:', err);
+                alert('Failed to join chat');
+            });
+        }
+        
+        function sendBuddyMessage() {
+            const input = document.getElementById('buddyMessageInput');
+            const message = input.value.trim();
+            
+            if (!message || !buddyId) return;
+            
+            // Send message
+            fetch('/api/buddy/message', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    from_id: buddyId,
+                    from_name: buddyName,
+                    to_id: 'host',
+                    message: message
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                // Add message to chat
+                addBuddyMessage(buddyName, message, new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}), false);
+                input.value = '';
+            })
+            .catch(err => {
+                console.error('Failed to send message:', err);
+            });
+        }
+        
+        function addBuddyMessage(name, message, time, isHost) {
+            const messagesContainer = document.getElementById('buddyMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'buddy-message' + (isHost ? ' host' : '');
+            
+            messageDiv.innerHTML = '<div class="buddy-message-header">' +
+                '<span class="buddy-message-name">' + name + '</span>' +
+                '<span class="buddy-message-time">' + time + '</span>' +
+                '</div>' +
+                '<div class="buddy-message-text">' + message + '</div>';
+            
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        // Listen for buddy events via SSE
+        if (eventSource) {
+            eventSource.addEventListener('message', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'buddy_message') {
+                        const msg = data.message;
+                        if (msg.to_id === buddyId || msg.from_id === 'host') {
+                            addBuddyMessage(
+                                msg.from_name,
+                                msg.message,
+                                new Date(msg.time || Date.now()).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}),
+                                msg.from_id === 'host'
+                            );
+                        }
+                    }
+                } catch (e) {
+                    // Ignore parsing errors
+                }
+            });
+        }
     </script>
 </body>
 </html>`

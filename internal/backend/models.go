@@ -44,14 +44,14 @@ func AvailableModels() []ModelOption {
 		{
 			ID:          "glm-4.5-air-8bit",
 			Name:        "GLM 4.5 Air 8-bit (MLX)",
-			Description: "Highest quality GLM. Full 8-bit precision. MLX for Apple Silicon.",
-			Size:        34 * 1024 * 1024 * 1024,  // ~34 GB
-			Memory:      48 * 1024 * 1024 * 1024,  // 48 GB RAM
-			URL:         "https://huggingface.co/mlx-community/GLM-4.5-Air-8bit",
+			Description: "Highest quality 107B GLM. Full 8-bit precision. MLX for Apple Silicon.",
+			Size:        110 * 1024 * 1024 * 1024,  // ~110 GB (actual: 109.61 GB)
+			Memory:      128 * 1024 * 1024 * 1024,  // 128 GB RAM recommended for 8-bit
+			URL:         "https://huggingface.co/lmstudio-community/GLM-4.5-Air-MLX-8bit",
 			Checksum:    "placeholder",
 			Provider:    "mlx",
 			Tier:        TierPowerUser,
-			Recommended: true, // Best quality for power users
+			Recommended: true, // Best quality for power users with high RAM
 			Available:   isAppleSilicon,
 			WhyNotAvailable: func() string {
 				if !isAppleSilicon {

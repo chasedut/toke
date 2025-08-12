@@ -8,7 +8,6 @@ import (
 	"github.com/charmbracelet/bubbles/v2/textinput"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
-	"github.com/chasedut/toke/internal/config"
 	"github.com/chasedut/toke/internal/tui/components/dialogs"
 	"github.com/chasedut/toke/internal/tui/styles"
 	"github.com/chasedut/toke/internal/tui/util"
@@ -177,4 +176,9 @@ func (d *NgrokAuthDialog) SetSize(width, height int) tea.Cmd {
 
 func (d *NgrokAuthDialog) ID() dialogs.DialogID {
 	return NgrokAuthDialogID
+}
+
+func (d *NgrokAuthDialog) Position() (int, int) {
+	// Return 0, 0 to center the dialog
+	return 0, 0
 }

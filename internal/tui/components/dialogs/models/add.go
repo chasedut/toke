@@ -139,7 +139,8 @@ func (m *AddModelsCmp) buildOptions() []list.Group[list.CompletionItem[AddOption
 		}{
 			{"qwen2.5-coder-7b-4bit", "Qwen 2.5 Coder MLX", "5GB - Faster than GGUF on Apple Silicon"},
 			{"glm-4.5-air-3bit", "GLM 4.5 Air 3-bit MLX", "13GB - For 16GB RAM Macs"},
-			{"glm-4.5-air-4bit", "GLM 4.5 Air 4-bit MLX", "17GB - For 24GB+ RAM Macs"},
+			{"glm-4.5-air-4bit", "GLM 4.5 Air 4-bit MLX", "56GB - For 24GB+ RAM Macs"},
+			{"glm-4.5-air-8bit", "GLM 4.5 Air 8-bit MLX", "110GB - Highest quality for 128GB+ RAM Macs"},
 		}
 
 		for _, model := range mlxModels {

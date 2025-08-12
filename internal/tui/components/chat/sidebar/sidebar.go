@@ -62,6 +62,7 @@ type Sidebar interface {
 	SetSession(session session.Session) tea.Cmd
 	SetCompactMode(bool)
 	SetWebShareURLs(localURL, ngrokURL string)
+	SetBuddyInfo(count int, names []string)
 }
 
 type sidebarCmp struct {
@@ -75,6 +76,8 @@ type sidebarCmp struct {
 	files           *csync.Map[string, SessionFile]
 	webShareLocalURL string
 	webShareNgrokURL string
+	buddyCount      int
+	buddyNames      []string
 }
 
 func New(history history.Service, lspClients map[string]*lsp.Client, compact bool) Sidebar {
@@ -615,6 +618,33 @@ func (m *sidebarCmp) webShareBlock() string {
 	statusText := t.S().Base.Foreground(t.FgMuted).Render("Broadcasting")
 	parts = append(parts, fmt.Sprintf("  %s %s", statusIcon, statusText))
 	
+	// Buddy information
+	if m.buddyCount > 0 {
+		buddyIcon := t.S().Base.Foreground(t.Accent).Render("👥")
+		buddyText := t.S().Base.Foreground(t.FgMuted).Render(fmt.Sprintf("%d buddy connected", m.buddyCount))
+		if m.buddyCount > 1 {
+			buddyText = t.S().Base.Foreground(t.FgMuted).Render(fmt.Sprintf("%d buddies connected", m.buddyCount))
+		}
+		parts = append(parts, fmt.Sprintf("  %s %s", buddyIcon, buddyText))
+		
+		// Show buddy names (up to 3)
+		maxNames := 3
+		if len(m.buddyNames) > 0 {
+			namesToShow := m.buddyNames
+			if len(namesToShow) > maxNames {
+				namesToShow = namesToShow[:maxNames]
+			}
+			for _, name := range namesToShow {
+				nameText := t.S().Base.Foreground(t.FgHalfMuted).Render(fmt.Sprintf("    • %s", name))
+				parts = append(parts, nameText)
+			}
+			if len(m.buddyNames) > maxNames {
+				moreText := t.S().Base.Foreground(t.FgHalfMuted).Italic(true).Render(fmt.Sprintf("    ...and %d more", len(m.buddyNames)-maxNames))
+				parts = append(parts, moreText)
+			}
+		}
+	}
+	
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
@@ -685,6 +715,11 @@ func (m *sidebarCmp) SetCompactMode(compact bool) {
 func (m *sidebarCmp) SetWebShareURLs(localURL, ngrokURL string) {
 	m.webShareLocalURL = localURL
 	m.webShareNgrokURL = ngrokURL
+}
+
+func (m *sidebarCmp) SetBuddyInfo(count int, names []string) {
+	m.buddyCount = count
+	m.buddyNames = names
 }
 
 func cwd() string {

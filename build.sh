@@ -54,13 +54,18 @@ fi
 # Build or copy mlx-server (only for macOS ARM64)
 if [ "$OS" = "darwin" ] && [ "$ARCH" = "arm64" ]; then
     echo -e "${GREEN}Preparing MLX backend...${NC}"
-    if [ -d "build-mlx-server/output" ]; then
+    if [ -f "build-mlx-server/mlx-server-darwin-arm64.tar.gz" ]; then
+        echo "  Extracting existing MLX server tarball"
+        tar -xzf "build-mlx-server/mlx-server-darwin-arm64.tar.gz" -C "build/toke-${PLATFORM}/backends/"
+    elif [ -d "build-mlx-server/output" ]; then
         cp -r "build-mlx-server/output/"* "build/toke-${PLATFORM}/backends/"
         echo "  Using existing MLX server"
     else
         echo -e "${YELLOW}  MLX server not found, building...${NC}"
         ./scripts/build-mlx-server.sh
-        if [ -d "build-mlx-server/output" ]; then
+        if [ -f "build-mlx-server/mlx-server-darwin-arm64.tar.gz" ]; then
+            tar -xzf "build-mlx-server/mlx-server-darwin-arm64.tar.gz" -C "build/toke-${PLATFORM}/backends/"
+        elif [ -d "build-mlx-server/output" ]; then
             cp -r "build-mlx-server/output/"* "build/toke-${PLATFORM}/backends/"
         else
             echo -e "${RED}  Failed to build MLX server${NC}"
