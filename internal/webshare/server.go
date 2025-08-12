@@ -2057,8 +2057,7 @@ const htmlTemplate = `<!DOCTYPE html>
             })
             .then(res => res.json())
             .then(data => {
-                // Add message to chat
-                addBuddyMessage(buddyName, message, new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}), false);
+                // Don't add message locally - it will come back via SSE
                 input.value = '';
             })
             .catch(err => {
@@ -2088,7 +2087,11 @@ const htmlTemplate = `<!DOCTYPE html>
                     const data = JSON.parse(event.data);
                     if (data.type === 'buddy_message') {
                         const msg = data.message;
-                        if (msg.to_id === buddyId || msg.from_id === 'host') {
+                        // Show messages that are:
+                        // 1. From this buddy (their own messages coming back)
+                        // 2. From host to this buddy or to all buddies
+                        if (msg.from_id === buddyId || 
+                            (msg.from_id === 'host' && (msg.to_id === buddyId || msg.to_id === 'all'))) {
                             addBuddyMessage(
                                 msg.from_name,
                                 msg.message,

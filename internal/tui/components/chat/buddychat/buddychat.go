@@ -3,7 +3,6 @@ package buddychat
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/v2/textinput"
 	tea "github.com/charmbracelet/bubbletea/v2"
@@ -110,13 +109,7 @@ func (b *BuddyChatComponent) Update(msg tea.Msg) (*BuddyChatComponent, tea.Cmd) 
 					for _, buddy := range b.buddies {
 						b.share.SendMessageToBuddy(buddy.ID, b.input.Value())
 					}
-					// Add to local messages
-					b.messages = append(b.messages, webshare.BuddyMessage{
-						FromID:   "host",
-						FromName: "You",
-						Message:  b.input.Value(),
-						Time:     time.Now(),
-					})
+					// Don't add to local messages - it will come back via broadcast
 					b.input.SetValue("")
 				}
 				return b, nil
