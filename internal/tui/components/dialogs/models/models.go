@@ -321,17 +321,34 @@ func (m *modelDialogCmp) style() lipgloss.Style {
 }
 
 func (m *modelDialogCmp) listWidth() int {
-	return m.width - 2
+	if m.width <= 2 {
+		return 10 // Default width
+	}
+	return max(10, m.width - 2)
 }
 
 func (m *modelDialogCmp) listHeight() int {
-	return m.wHeight / 2
+	if m.wHeight == 0 {
+		return 10 // Default height
+	}
+	return max(5, m.wHeight / 2)
 }
 
 func (m *modelDialogCmp) Position() (int, int) {
+	// Default position if window size not set yet
+	if m.wHeight == 0 || m.wWidth == 0 {
+		return 5, 10
+	}
 	row := m.wHeight/4 - 2 // just a bit above the center
 	col := m.wWidth / 2
 	col -= m.width / 2
+	// Ensure minimum position
+	if row < 2 {
+		row = 2
+	}
+	if col < 2 {
+		col = 2
+	}
 	return row, col
 }
 

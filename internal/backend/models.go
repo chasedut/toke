@@ -64,7 +64,7 @@ func AvailableModels() []ModelOption {
 			ID:          "glm-4.5-air-4bit",
 			Name:        "GLM 4.5 Air 4-bit (MLX)",
 			Description: "Cutting-edge 106B model. Great balance. MLX 4-bit for Apple Silicon.",
-			Size:        17 * 1024 * 1024 * 1024,  // ~17 GB
+			Size:        56 * 1024 * 1024 * 1024,  // ~56 GB (actual size with all shards)
 			Memory:      24 * 1024 * 1024 * 1024,  // 24 GB RAM
 			URL:         "https://huggingface.co/mlx-community/GLM-4.5-Air-4bit",
 			Checksum:    "placeholder",
@@ -173,28 +173,16 @@ func AvailableModels() []ModelOption {
 		
 		// Tier 3: Power User (40GB+) - Maximum capability
 		{
-			ID:          "glm-4.5-air-iq2_m",
-			Name:        "GLM 4.5 Air IQ2_M",
-			Description: "Massive 107B parameter model. Superior quality. 2-bit imatrix quantization.",
+			ID:          "glm-4.5-air-q2_k",
+			Name:        "GLM 4.5 Air Q2_K",
+			Description: "Massive 107B parameter model. Superior quality. 2-bit quantization.",
 			Size:        44 * 1024 * 1024 * 1024,  // 44 GB
 			Memory:      48 * 1024 * 1024 * 1024,  // 48 GB RAM
-			URL:         "https://huggingface.co/unsloth/GLM-4.5-Air-GGUF/resolve/main/GLM-4.5-Air-IQ2_M.gguf",
+			URL:         "https://huggingface.co/mradermacher/GLM-4.5-Air-GGUF/resolve/main/GLM-4.5-Air.Q2_K.gguf",
 			Checksum:    "placeholder",
 			Provider:    "llamacpp",
 			Tier:        TierPowerUser,
 			Recommended: true,
-		},
-		{
-			ID:          "glm-4.5-air-q2_k",
-			Name:        "GLM 4.5 Air Q2_K",
-			Description: "GLM 4.5 Air with standard 2-bit quantization. Slightly smaller.",
-			Size:        45 * 1024 * 1024 * 1024,  // 45 GB
-			Memory:      48 * 1024 * 1024 * 1024,  // 48 GB RAM
-			URL:         "https://huggingface.co/unsloth/GLM-4.5-Air-GGUF/resolve/main/GLM-4.5-Air-Q2_K.gguf",
-			Checksum:    "placeholder",
-			Provider:    "llamacpp",
-			Tier:        TierPowerUser,
-			Recommended: false,
 		},
 	}
 	
@@ -265,6 +253,11 @@ func FormatSize(bytes int64) string {
 	for n := bytes / unit; n >= unit; n /= unit {
 		div *= unit
 		exp++
+	}
+	// Use 2 decimal places for MB to show more granular progress
+	// Use 1 decimal place for GB and above
+	if exp == 1 { // MB
+		return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 	}
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }

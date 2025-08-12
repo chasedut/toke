@@ -63,6 +63,8 @@ type (
 	SwitchSessionsMsg     struct{}
 	NewSessionsMsg        struct{}
 	SwitchModelMsg        struct{}
+	AddNewModelsMsg       struct{}
+	ShowActiveDownloadMsg struct{}
 	QuitMsg               struct{}
 	OpenFilePickerMsg     struct{}
 	ToggleHelpMsg         struct{}
@@ -70,9 +72,17 @@ type (
 	ToggleThinkingMsg     struct{}
 	OpenExternalEditorMsg struct{}
 	ToggleYoloModeMsg     struct{}
+	InviteBuddyMsg        struct {
+		SessionID string
+	}
 	CompactMsg            struct {
 		SessionID string
 	}
+	WebShareStartedMsg    struct {
+		LocalURL string
+		NgrokURL string
+	}
+	WebShareStoppedMsg    struct{}
 )
 
 func NewCommandDialog(sessionID string) CommandsDialog {
@@ -112,7 +122,10 @@ func (c *commandDialogCmp) Init() tea.Cmd {
 		return util.ReportError(err)
 	}
 	c.userCommands = commands
-	return c.SetCommandType(c.commandType)
+	return tea.Batch(
+		c.SetCommandType(c.commandType),
+		c.commandList.SetSize(c.listWidth(), c.listHeight()),
+	)
 }
 
 func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -229,8 +242,13 @@ func (c *commandDialogCmp) SetCommandType(commandType int) tea.Cmd {
 }
 
 func (c *commandDialogCmp) listHeight() int {
+	// Minimum height for the list
+	if c.wHeight == 0 {
+		return 10
+	}
 	listHeigh := len(c.commandList.Items()) + 2 + 4 // height based on items + 2 for the input + 4 for the sections
-	return min(listHeigh, c.wHeight/2)
+	maxHeight := max(10, c.wHeight/2)
+	return min(listHeigh, maxHeight)
 }
 
 func (c *commandDialogCmp) moveCursor(cursor *tea.Cursor) *tea.Cursor {
@@ -250,9 +268,20 @@ func (c *commandDialogCmp) style() lipgloss.Style {
 }
 
 func (c *commandDialogCmp) Position() (int, int) {
+	// Default position if window size not set yet
+	if c.wHeight == 0 || c.wWidth == 0 {
+		return 5, 10
+	}
 	row := c.wHeight/4 - 2 // just a bit above the center
 	col := c.wWidth / 2
 	col -= c.width / 2
+	// Ensure minimum position
+	if row < 2 {
+		row = 2
+	}
+	if col < 2 {
+		col = 2
+	}
 	return row, col
 }
 
@@ -284,10 +313,31 @@ func (c *commandDialogCmp) defaultCommands() []Command {
 				return util.CmdHandler(SwitchModelMsg{})
 			},
 		},
+		{
+			ID:          "add_new_models",
+			Title:       "New Model",
+			Description: "Download local models or configure API providers",
+			Handler: func(cmd Command) tea.Cmd {
+				return util.CmdHandler(AddNewModelsMsg{})
+			},
+		},
 	}
 
-	// Only show compact command if there's an active session
+	// Only show session-specific commands if there's an active session
 	if c.sessionID != "" {
+		// Add Invite a Buddy command
+		commands = append(commands, Command{
+			ID:          "invite_buddy",
+			Title:       "Invite a Buddy",
+			Description: "Share your session with others via web interface",
+			Shortcut:    "ctrl+i",
+			Handler: func(cmd Command) tea.Cmd {
+				return util.CmdHandler(InviteBuddyMsg{
+					SessionID: c.sessionID,
+				})
+			},
+		})
+		
 		commands = append(commands, Command{
 			ID:          "Summarize",
 			Title:       "Summarize Session",

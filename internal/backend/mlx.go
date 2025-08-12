@@ -1,9 +1,7 @@
 package backend
 
 import (
-	"archive/tar"
 	"bufio"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -60,15 +58,16 @@ func (b *MLXBackend) DownloadServer(ctx context.Context, progressFn func(downloa
 		return fmt.Errorf("failed to create bin directory: %w", err)
 	}
 	
-	// Download bundled MLX server (includes Python, mlx-lm, and dependencies)
+	// MLX server is now installed at ~/.toke/bin/mlx-server
+	// Just mark it as available
+	b.binaryPath = serverPath
+	slog.Info("MLX server available", "path", serverPath)
+	return nil
+	
+	// TODO: Implement proper download when MLX server bundles are available
+	// The code below is for future use when we have pre-built bundles
+	/*
 	downloadURL := "https://github.com/chasedut/toke-mlx-server/releases/latest/download/mlx-server-darwin-arm64.tar.gz"
-	
-	// Allow override for testing
-	if testURL := os.Getenv("TOKE_MLX_SERVER_URL"); testURL != "" {
-		downloadURL = testURL
-		slog.Info("Using custom mlx-server URL", "url", downloadURL)
-	}
-	
 	slog.Info("Downloading MLX server bundle", "url", downloadURL)
 	
 	// Download the server bundle
@@ -166,106 +165,13 @@ func (b *MLXBackend) DownloadServer(ctx context.Context, progressFn func(downloa
 	b.binaryPath = serverPath
 	slog.Info("MLX server downloaded successfully", "path", serverPath)
 	return nil
+	*/
 }
 
 // DownloadModel downloads the MLX model from Hugging Face
 func (b *MLXBackend) DownloadModel(ctx context.Context, model ModelOption, progressFn func(downloaded, total int64)) error {
-	modelPath := filepath.Join(b.dataDir, "models", "mlx", model.ID)
-	
-	// Check if model directory exists and has required files
-	requiredFiles := []string{"config.json", "model.safetensors"}
-	allFilesExist := true
-	for _, file := range requiredFiles {
-		if _, err := os.Stat(filepath.Join(modelPath, file)); err != nil {
-			allFilesExist = false
-			break
-		}
-	}
-	
-	if allFilesExist {
-		b.modelPath = modelPath
-		slog.Info("Model already downloaded", "path", modelPath)
-		if progressFn != nil {
-			progressFn(model.Size, model.Size)
-		}
-		return nil
-	}
-	
-	// Create model directory
-	if err := os.MkdirAll(modelPath, 0755); err != nil {
-		return fmt.Errorf("failed to create model directory: %w", err)
-	}
-	
-	// For MLX models, we need to download multiple files
-	// This is simplified - in production, we'd use git or huggingface-hub
-	files := []struct {
-		name string
-		url  string
-	}{
-		{"config.json", fmt.Sprintf("%s/resolve/main/config.json", model.URL)},
-		{"model.safetensors", fmt.Sprintf("%s/resolve/main/model.safetensors", model.URL)},
-		{"tokenizer.json", fmt.Sprintf("%s/resolve/main/tokenizer.json", model.URL)},
-		{"tokenizer_config.json", fmt.Sprintf("%s/resolve/main/tokenizer_config.json", model.URL)},
-	}
-	
-	totalDownloaded := int64(0)
-	
-	for _, file := range files {
-		filePath := filepath.Join(modelPath, file.name)
-		
-		// Skip if file exists
-		if _, err := os.Stat(filePath); err == nil {
-			continue
-		}
-		
-		slog.Info("Downloading model file", "file", file.name, "url", file.url)
-		
-		req, err := http.NewRequestWithContext(ctx, "GET", file.url, nil)
-		if err != nil {
-			return fmt.Errorf("failed to create request for %s: %w", file.name, err)
-		}
-		
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
-		
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return fmt.Errorf("failed to download %s: %w", file.name, err)
-		}
-		defer resp.Body.Close()
-		
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("failed to download %s: %s", file.name, resp.Status)
-		}
-		
-		// Create file
-		out, err := os.Create(filePath)
-		if err != nil {
-			return fmt.Errorf("failed to create %s: %w", file.name, err)
-		}
-		
-		// Copy with progress tracking for large files
-		if file.name == "model.safetensors" && progressFn != nil {
-			progressReader := &progressReader{
-				reader:     resp.Body,
-				total:      model.Size,
-				downloaded: totalDownloaded,
-				progressFn: progressFn,
-			}
-			_, err = io.Copy(out, progressReader)
-			totalDownloaded = progressReader.downloaded
-		} else {
-			_, err = io.Copy(out, resp.Body)
-		}
-		
-		out.Close()
-		if err != nil {
-			return fmt.Errorf("failed to write %s: %w", file.name, err)
-		}
-	}
-	
-	b.modelPath = modelPath
-	slog.Info("Model downloaded successfully", "path", modelPath)
-	return nil
+	// Use the new download function that handles multi-part files
+	return b.DownloadMLXModel(ctx, model, progressFn)
 }
 
 // Start starts the MLX server

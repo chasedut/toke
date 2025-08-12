@@ -151,17 +151,35 @@ func (s *sessionDialogCmp) style() lipgloss.Style {
 }
 
 func (s *sessionDialogCmp) listHeight() int {
-	return s.wHeight/2 - 6 // 5 for the border, title and help
+	if s.wHeight == 0 {
+		return 10 // Default height
+	}
+	height := s.wHeight/2 - 6 // 5 for the border, title and help
+	return max(5, height) // Ensure minimum height of 5
 }
 
 func (s *sessionDialogCmp) listWidth() int {
-	return s.width - 2 // 2 for the border
+	if s.width <= 2 {
+		return 10 // Default width
+	}
+	return max(10, s.width - 2) // 2 for the border, ensure minimum width
 }
 
 func (s *sessionDialogCmp) Position() (int, int) {
+	// Default position if window size not set yet
+	if s.wHeight == 0 || s.wWidth == 0 {
+		return 5, 10
+	}
 	row := s.wHeight/4 - 2 // just a bit above the center
 	col := s.wWidth / 2
 	col -= s.width / 2
+	// Ensure minimum position
+	if row < 2 {
+		row = 2
+	}
+	if col < 2 {
+		col = 2
+	}
 	return row, col
 }
 

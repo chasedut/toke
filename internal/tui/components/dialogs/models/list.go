@@ -113,37 +113,6 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 
 	configuredIcon := t.S().Base.Foreground(t.Success).Render(styles.CheckIcon)
 	configured := fmt.Sprintf("%s %s", configuredIcon, t.S().Subtle.Render("Configured"))
-
-	// Add a "None" section with setup options as regular items
-	noneSection := list.NewItemSection("None")
-	noneSection.SetInfo("No model selected")
-	
-	noneGroup := list.Group[list.CompletionItem[ModelOption]]{
-		Section: noneSection,
-	}
-	
-	// Add setup options as regular items
-	apiKeyItem := list.NewCompletionItem(
-		"🔑 Setup with API Key", 
-		ModelOption{
-			Provider: catwalk.Provider{ID: "api_setup", Name: "API Setup"},
-			Model:    catwalk.Model{ID: "api_key", Name: "Setup API Key"},
-		},
-		list.WithCompletionID("none:setup_api_key"),
-	)
-	noneGroup.Items = append(noneGroup.Items, apiKeyItem)
-	
-	localSetupItem := list.NewCompletionItem(
-		"⬇ Download Local Model", 
-		ModelOption{
-			Provider: catwalk.Provider{ID: "local_setup", Name: "Local Setup"},
-			Model:    catwalk.Model{ID: "setup", Name: "Setup Local Model"},
-		},
-		list.WithCompletionID("none:download_local"),
-	)
-	noneGroup.Items = append(noneGroup.Items, localSetupItem)
-	
-	groups = append(groups, noneGroup)
 	
 	// Add Local Models section only if a local model is configured
 	if localConfig, _ := cfg.GetLocalModelConfig(); localConfig != nil && localConfig.Enabled {
@@ -184,6 +153,11 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 	}
 	for providerID, providerConfig := range cfg.Providers.Seq2() {
 		if providerConfig.Disable {
+			continue
+		}
+		
+		// Skip the local provider as it's already handled above
+		if providerID == "local" {
 			continue
 		}
 
@@ -257,6 +231,11 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 	for _, provider := range m.providers {
 		// Skip if we already added this provider as an unknown provider
 		if addedProviders[string(provider.ID)] {
+			continue
+		}
+		
+		// Skip the local provider as it's already handled above
+		if string(provider.ID) == "local" {
 			continue
 		}
 

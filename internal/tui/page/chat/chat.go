@@ -252,6 +252,14 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		u, cmd := p.editor.Update(msg)
 		p.editor = u.(editor.Editor)
 		return p, cmd
+	case commands.WebShareStartedMsg:
+		// Update sidebar with web share URLs
+		p.sidebar.SetWebShareURLs(msg.LocalURL, msg.NgrokURL)
+		return p, nil
+	case commands.WebShareStoppedMsg:
+		// Clear web share URLs from sidebar
+		p.sidebar.SetWebShareURLs("", "")
+		return p, nil
 	case pubsub.Event[session.Session]:
 		u, cmd := p.header.Update(msg)
 		p.header = u.(header.Header)

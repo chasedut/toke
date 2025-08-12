@@ -61,17 +61,20 @@ type Sidebar interface {
 	layout.Sizeable
 	SetSession(session session.Session) tea.Cmd
 	SetCompactMode(bool)
+	SetWebShareURLs(localURL, ngrokURL string)
 }
 
 type sidebarCmp struct {
-	width, height int
-	session       session.Session
-	logo          string
-	cwd           string
-	lspClients    map[string]*lsp.Client
-	compactMode   bool
-	history       history.Service
-	files         *csync.Map[string, SessionFile]
+	width, height   int
+	session         session.Session
+	logo            string
+	cwd             string
+	lspClients      map[string]*lsp.Client
+	compactMode     bool
+	history         history.Service
+	files           *csync.Map[string, SessionFile]
+	webShareLocalURL string
+	webShareNgrokURL string
 }
 
 func New(history history.Service, lspClients map[string]*lsp.Client, compact bool) Sidebar {
@@ -148,6 +151,11 @@ func (m *sidebarCmp) View() string {
 	parts = append(parts,
 		m.currentModelBlock(),
 	)
+
+	// Add web share URLs if active
+	if m.webShareLocalURL != "" || m.webShareNgrokURL != "" {
+		parts = append(parts, "", m.webShareBlock())
+	}
 
 	// Check if we should use horizontal layout for sections
 	if m.compactMode && m.width > m.height {
@@ -540,6 +548,76 @@ func formatTokensAndCost(tokens, contextWindow int64, cost float64) string {
 	return fmt.Sprintf("%s %s", formattedTokens, formattedCost)
 }
 
+func (m *sidebarCmp) webShareBlock() string {
+	t := styles.CurrentTheme()
+	maxWidth := m.getMaxWidth()
+	
+	// Section header
+	header := core.Section("🌐 Session Sharing", maxWidth)
+	parts := []string{header}
+	
+	// Local URL
+	if m.webShareLocalURL != "" {
+		localLabel := t.S().Base.Foreground(t.FgMuted).Render("Local:")
+		localURL := t.S().Base.Foreground(t.Accent).Render(m.webShareLocalURL)
+		
+		// Truncate URL if too long
+		maxURLWidth := maxWidth - lipgloss.Width(localLabel) - 2
+		if lipgloss.Width(localURL) > maxURLWidth {
+			// Show just the port part for local URLs
+			if strings.Contains(m.webShareLocalURL, "localhost:") {
+				port := strings.Split(m.webShareLocalURL, ":")[2]
+				localURL = t.S().Base.Foreground(t.Accent).Render("localhost:" + port)
+			}
+		}
+		
+		parts = append(parts, fmt.Sprintf("  %s %s", localLabel, localURL))
+	}
+	
+	// Ngrok URL
+	if m.webShareNgrokURL != "" {
+		ngrokLabel := t.S().Base.Foreground(t.FgMuted).Render("Public:")
+		
+		// Extract just the domain from ngrok URL for display
+		ngrokDisplay := m.webShareNgrokURL
+		if strings.Contains(ngrokDisplay, "//") {
+			parts := strings.Split(ngrokDisplay, "//")
+			if len(parts) > 1 {
+				ngrokDisplay = parts[1]
+				// Remove path if any
+				if idx := strings.Index(ngrokDisplay, "/"); idx > 0 {
+					ngrokDisplay = ngrokDisplay[:idx]
+				}
+			}
+		}
+		
+		ngrokURL := t.S().Base.Foreground(t.Success).Render(ngrokDisplay)
+		
+		// Truncate if still too long
+		maxURLWidth := maxWidth - lipgloss.Width(ngrokLabel) - 2
+		if lipgloss.Width(ngrokURL) > maxURLWidth {
+			// Show ellipsis for very long domains
+			if len(ngrokDisplay) > maxURLWidth {
+				ngrokDisplay = ngrokDisplay[:maxURLWidth-3] + "..."
+				ngrokURL = t.S().Base.Foreground(t.Success).Render(ngrokDisplay)
+			}
+		}
+		
+		parts = append(parts, fmt.Sprintf("  %s %s", ngrokLabel, ngrokURL))
+	} else {
+		// Show ngrok not available message
+		noNgrok := t.S().Base.Foreground(t.FgHalfMuted).Italic(true).Render("  (ngrok not available)")
+		parts = append(parts, noNgrok)
+	}
+	
+	// Status indicator
+	statusIcon := t.S().Base.Foreground(t.Success).Render("●")
+	statusText := t.S().Base.Foreground(t.FgMuted).Render("Broadcasting")
+	parts = append(parts, fmt.Sprintf("  %s %s", statusIcon, statusText))
+	
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
 func (s *sidebarCmp) currentModelBlock() string {
 	cfg := config.Get()
 	agentCfg := cfg.Agents["coder"]
@@ -601,6 +679,12 @@ func (m *sidebarCmp) SetSession(session session.Session) tea.Cmd {
 // SetCompactMode sets the compact mode for the sidebar.
 func (m *sidebarCmp) SetCompactMode(compact bool) {
 	m.compactMode = compact
+}
+
+// SetWebShareURLs sets the web share URLs for display
+func (m *sidebarCmp) SetWebShareURLs(localURL, ngrokURL string) {
+	m.webShareLocalURL = localURL
+	m.webShareNgrokURL = ngrokURL
 }
 
 func cwd() string {

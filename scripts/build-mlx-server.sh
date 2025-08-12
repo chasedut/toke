@@ -17,9 +17,9 @@ mkdir -p "${OUTPUT_DIR}"
 
 cd "${BUILD_DIR}"
 
-# Create a minimal Python virtual environment
+# Create a minimal Python virtual environment using Python 3.12 (ARM64)
 echo "Creating Python environment..."
-python3 -m venv mlx-env
+/opt/homebrew/bin/python3.12 -m venv mlx-env
 
 # Activate the environment
 source mlx-env/bin/activate

@@ -260,9 +260,16 @@ func (b *LlamaCppBackend) DownloadModel(ctx context.Context, model ModelOption, 
 	// Open file for writing (append if resuming)
 	var file *os.File
 	if startByte > 0 {
-		file, err = os.OpenFile(modelPath+".partial", os.O_APPEND|os.O_WRONLY, 0644)
+		// Try to open for append, but create if it doesn't exist
+		file, err = os.OpenFile(partialPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			// If that fails, just create a new file
+			slog.Warn("Failed to open partial file for append, creating new", "error", err)
+			startByte = 0
+			file, err = os.Create(partialPath)
+		}
 	} else {
-		file, err = os.Create(modelPath + ".partial")
+		file, err = os.Create(partialPath)
 	}
 	if err != nil {
 		return fmt.Errorf("failed to create model file: %w", err)
@@ -292,9 +299,36 @@ func (b *LlamaCppBackend) DownloadModel(ctx context.Context, model ModelOption, 
 		return fmt.Errorf("failed to create target directory: %w", err)
 	}
 	
-	// Rename to final name
-	if err := os.Rename(modelPath+".partial", modelPath); err != nil {
-		return fmt.Errorf("failed to finalize model file: rename %s to %s: %w", modelPath+".partial", modelPath, err)
+	// Try to rename first (fastest option)
+	renameErr := os.Rename(partialPath, modelPath)
+	if renameErr != nil {
+		// If rename fails (e.g., cross-device), fall back to copy and delete
+		slog.Warn("Rename failed, trying copy instead", "error", renameErr)
+		
+		// Copy the file
+		srcFile, err := os.Open(partialPath)
+		if err != nil {
+			return fmt.Errorf("failed to open partial file for copy: %w", err)
+		}
+		defer srcFile.Close()
+		
+		dstFile, err := os.Create(modelPath)
+		if err != nil {
+			return fmt.Errorf("failed to create final model file: %w", err)
+		}
+		
+		_, copyErr := io.Copy(dstFile, srcFile)
+		dstFile.Close()
+		
+		if copyErr != nil {
+			os.Remove(modelPath) // Clean up partial copy
+			return fmt.Errorf("failed to copy model file: %w", copyErr)
+		}
+		
+		// Remove the partial file
+		if err := os.Remove(partialPath); err != nil {
+			slog.Warn("Failed to remove partial file after copy", "path", partialPath, "error", err)
+		}
 	}
 	
 	b.modelPath = modelPath

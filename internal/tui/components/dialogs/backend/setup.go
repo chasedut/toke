@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/v2/progress"
+	"github.com/charmbracelet/bubbles/v2/spinner"
 	"github.com/charmbracelet/bubbles/v2/textinput"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/chasedut/toke/internal/backend"
 	"github.com/chasedut/toke/internal/config"
 	"github.com/chasedut/toke/internal/tui/components/dialogs"
+	"github.com/chasedut/toke/internal/tui/util"
 )
 
 type State int
@@ -36,7 +38,6 @@ type Model struct {
 	// Selection state
 	selectedOption int
 	selectedModel  *backend.ModelOption
-	showAdvanced   bool
 	isLocalOnly    bool  // If true, only show local model options
 	
 	// Hugging Face state
@@ -54,6 +55,11 @@ type Model struct {
 	downloadMsg  string
 	bytesDownloaded int64
 	totalBytes     int64
+	
+	// Animation state
+	animFrame    int
+	flameFrame   int
+	spinner      spinner.Model
 	
 	// Error state
 	errorMsg     string
@@ -95,10 +101,34 @@ type HFErrorMsg struct {
 	Error error
 }
 
+type AnimateMsg struct{}
+
+type MinimizeToBackgroundMsg struct{
+	Model      *backend.ModelOption
+	Progress   float64
+	Downloaded int64
+	Total      int64
+}
+
+type BackgroundDownloadProgressMsg struct{
+	Model      *backend.ModelOption
+	Downloaded int64
+	Total      int64
+	Message    string
+}
+
+type ShowDownloadModalMsg struct{
+	Model *backend.ModelOption
+}
+
 func New(orchestrator *backend.Orchestrator, onComplete func(*backend.ModelOption), onSkip func(), onAPIKey func()) Model {
 	searchInput := textinput.New()
 	searchInput.Placeholder = "Search for models (e.g., 'llama', 'mistral', 'qwen')..."
 	searchInput.CharLimit = 100
+	
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
 	
 	return Model{
 		state:        StateSelection,
@@ -110,6 +140,7 @@ func New(orchestrator *backend.Orchestrator, onComplete func(*backend.ModelOptio
 		isLocalOnly:  false,  // Show all options for initial setup
 		hfClient:     backend.NewHuggingFaceClient(),
 		hfSearchInput: searchInput,
+		spinner:      s,
 	}
 }
 
@@ -131,8 +162,96 @@ func NewLocalOnly(orchestrator *backend.Orchestrator, onComplete func(*backend.M
 	}
 }
 
+// NewWithModel creates a new Model dialog that immediately starts downloading a specific model
+func NewWithModel(orchestrator *backend.Orchestrator, model *backend.ModelOption, onComplete func(*backend.ModelOption)) Model {
+	m := Model{
+		state:         StateDownloading,
+		progress:      progress.New(progress.WithDefaultGradient()),
+		orchestrator:  orchestrator,
+		onComplete:    onComplete,
+		isLocalOnly:   true,
+		selectedModel: model,
+		downloadMsg:   fmt.Sprintf("Downloading %s...", model.Name),
+		hfClient:      backend.NewHuggingFaceClient(),
+	}
+	
+	// If this model's download is already in progress, restore the state
+	if downloadProgress.modelID == model.ID && 
+	   !downloadProgress.done && 
+	   downloadProgress.err == nil {
+		m.bytesDownloaded = downloadProgress.downloaded
+		m.totalBytes = downloadProgress.total
+		if downloadProgress.message != "" {
+			m.downloadMsg = downloadProgress.message
+		}
+		// Note: We'll set the progress percentage in Init() where we can return the command
+	}
+	
+	return m
+}
+
 func (m Model) Init() tea.Cmd {
+	// If we're starting in download state
+	if m.state == StateDownloading && m.selectedModel != nil {
+		// Check if this exact model's download is already in progress (resuming)
+		// The key check is whether the modelID matches - if it does, the download
+		// was already started and we should just resume monitoring it
+		if downloadProgress.modelID == m.selectedModel.ID && 
+		   !downloadProgress.done && 
+		   downloadProgress.err == nil {
+			// Download is already in progress for this model, just start the ticker
+			// Also restore the current progress to the model
+			m.bytesDownloaded = downloadProgress.downloaded
+			m.totalBytes = downloadProgress.total
+			if m.totalBytes == 0 {
+				// If total is not set yet, use the model's size
+				m.totalBytes = m.selectedModel.Size
+				downloadProgress.total = m.selectedModel.Size
+			}
+			m.downloadMsg = downloadProgress.message
+			if m.downloadMsg == "" {
+				m.downloadMsg = fmt.Sprintf("Downloading %s...", m.selectedModel.Name)
+			}
+			
+			// Set the progress bar percentage and get the command
+			var progressCmd tea.Cmd
+			if m.totalBytes > 0 {
+				percent := float64(m.bytesDownloaded) / float64(m.totalBytes)
+				progressCmd = m.progress.SetPercent(percent)
+			}
+			
+			// Send an immediate progress update to trigger the UI refresh
+			immediateProgressCmd := func() tea.Msg {
+				return DownloadProgressMsg{
+					Downloaded: m.bytesDownloaded,
+					Total:      m.totalBytes,
+					Message:    m.downloadMsg,
+				}
+			}
+			
+			return tea.Batch(
+				progressCmd,
+				immediateProgressCmd, // Trigger immediate update
+				m.tickDownloadProgress(),
+				m.spinner.Tick,
+				animate(),
+			)
+		}
+		// Start a new download (either a different model or no download in progress)
+		return tea.Batch(
+			m.startDownload(),
+			m.spinner.Tick,
+			animate(),
+		)
+	}
 	return nil
+}
+
+// animate returns a command that triggers animation
+func animate() tea.Cmd {
+	return tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg {
+		return AnimateMsg{}
+	})
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -153,6 +272,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleHFSearchKeys(msg)
 		case StateHFFileSelect:
 			return m.handleHFFileSelectKeys(msg)
+		case StateDownloading:
+			return m.handleDownloadingKeys(msg)
 		case StateError:
 			switch msg.String() {
 			case "enter", "esc":
@@ -167,6 +288,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		
+	case AnimateMsg:
+		m.animFrame++
+		m.flameFrame = (m.flameFrame + 1) % 4
+		return m, animate()
+		
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 		
 	case DownloadProgressMsg:
 		m.bytesDownloaded = msg.Downloaded
@@ -216,7 +347,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.onComplete != nil && m.selectedModel != nil {
 			m.onComplete(m.selectedModel)
 		}
-		return m, nil
+		// Close the dialog
+		return m, util.CmdHandler(dialogs.CloseDialogMsg{})
 		
 	case progress.FrameMsg:
 		progressModel, cmd := m.progress.Update(msg)
@@ -251,93 +383,169 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handleDownloadingKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "b":
+		// Minimize to background - close dialog but continue download
+		if m.selectedModel != nil {
+			var progress float64
+			if m.totalBytes > 0 {
+				progress = float64(m.bytesDownloaded) / float64(m.totalBytes)
+			}
+			// Send both the minimize message and close the dialog
+			return m, tea.Batch(
+				util.CmdHandler(MinimizeToBackgroundMsg{
+					Model:      m.selectedModel,
+					Progress:   progress,
+					Downloaded: m.bytesDownloaded,
+					Total:      m.totalBytes,
+				}),
+				util.CmdHandler(dialogs.CloseDialogMsg{}),
+				// Continue ticking for background updates
+				m.tickBackgroundDownload(),
+			)
+		}
+	case "esc":
+		// Cancel download - actually cancel the context to stop the download
+		if downloadProgress.cancel != nil {
+			downloadProgress.cancel() // This will cancel the actual download operation
+		}
+		// Set an error to indicate cancellation rather than completion
+		downloadProgress.err = fmt.Errorf("download cancelled by user")
+		downloadProgress.done = true // Mark as done with error
+		// Clear the download from background manager if present
+		if m.selectedModel != nil {
+			// Note: we'll need to handle this in the main TUI
+		}
+		return m, util.CmdHandler(dialogs.CloseDialogMsg{})
+	}
+	return m, nil
+}
+
 func (m Model) handleSelectionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
 		m.selectedOption--
 		if m.selectedOption < 0 {
-			if m.showAdvanced {
-				m.selectedOption = 8 // Wrap to bottom (GLM option)
+			// Wrap to bottom based on platform
+			if backend.IsAppleSilicon() {
+				m.selectedOption = 11 // 3 main options + Recommended + HF options + 6 MLX/GGUF models
 			} else {
-				m.selectedOption = 3 // Wrap to "Skip"
+				m.selectedOption = 7 // 3 main options + Recommended + HF options + 3 GGUF models
 			}
 		}
 		
 	case "down", "j":
 		m.selectedOption++
-		maxOption := 3
-		if m.showAdvanced {
-			maxOption = 8
+		// Count all options
+		var maxOption int
+		if backend.IsAppleSilicon() {
+			maxOption = 11 // 3 main + Recommended + HF options + 6 MLX/GGUF models
+		} else {
+			maxOption = 7 // 3 main + Recommended + HF options + 3 GGUF models
 		}
 		if m.selectedOption > maxOption {
 			m.selectedOption = 0
 		}
 		
-	case "tab":
-		// Toggle advanced options
-		m.showAdvanced = !m.showAdvanced
-		if m.selectedOption > 3 && !m.showAdvanced {
-			m.selectedOption = 0
-		}
 		
 	case "enter":
-		// Adjust indices based on whether API key option is shown
-		actualOption := m.selectedOption
-		if m.isLocalOnly && m.selectedOption > 0 {
-			// In local-only mode, option 1 (API key) doesn't exist
-			// So option 1 becomes "Browse models", option 2 becomes "Skip", etc.
-			actualOption++
-		}
-		
-		switch actualOption {
-		case 0: // Recommended model
-			m.selectedModel = backend.GetRecommendedModel()
-			m.state = StateDownloading
-			return m, m.startDownload()
+		switch m.selectedOption {
+		case 0: // Download Local Model (section header - do nothing)
+			return m, nil
 			
-		case 1: // API key (only in non-local mode)
-			if !m.isLocalOnly && m.onAPIKey != nil {
+		case 1: // Setup API Provider
+			// Open the models dialog to setup API
+			if m.onAPIKey != nil {
 				m.onAPIKey()
 			}
 			
-		case 2: // Browse models
-			m.showAdvanced = true
-			
-		case 3: // Skip
+		case 2: // Cancel
 			if m.onSkip != nil {
 				m.onSkip()
 			}
+			// Close the dialog
+			return m, util.CmdHandler(dialogs.CloseDialogMsg{})
 			
-		case 4: // Browse recent HF models (in advanced)
-			m.state = StateHFBrowse
-			m.hfLoading = true
-			return m, m.loadRecentModels()
-			
-		case 5: // Search HF models (in advanced)
-			m.state = StateHFSearch
-			m.hfSearchInput.Focus()
-			return m, textinput.Blink
-			
-		case 6: // Balanced model (in advanced)
-			m.selectedModel = backend.GetRecommendedByTier(backend.TierBalanced)
-			m.state = StateDownloading
-			return m, m.startDownload()
-			
-		case 7: // Light model (in advanced)
-			m.selectedModel = backend.GetModelByID("qwen2.5-3b-q4_k_m")
-			m.state = StateDownloading
-			return m, m.startDownload()
-			
-		case 8: // GLM-4.5-Air (in advanced)
-			m.selectedModel = backend.GetModelByID("glm-4.5-air-iq2_m")
-			m.state = StateDownloading
-			return m, m.startDownload()
+		default:
+			// Handle model selection options
+			if m.selectedOption >= 3 {
+				advancedIdx := m.selectedOption - 3
+				
+				// First option is recommended model
+				if advancedIdx == 0 {
+					// Recommended Qwen model
+					m.selectedModel = backend.GetRecommendedModel()
+					m.state = StateDownloading
+					return m, m.startDownload()
+				} else if advancedIdx == 1 {
+					// Browse recent HF models
+					m.state = StateHFBrowse
+					m.hfLoading = true
+					return m, m.loadRecentModels()
+				} else if advancedIdx == 2 {
+					// Search HF models
+					m.state = StateHFSearch
+					m.hfSearchInput.Focus()
+					return m, textinput.Blink
+				}
+				
+				// MLX models are now always shown at indices 3-6
+				// Check if user selected an MLX model
+				if advancedIdx >= 3 && advancedIdx <= 6 {
+					// MLX model selected
+					if !backend.IsAppleSilicon() {
+						// Show error for non-Apple Silicon
+						m.state = StateError
+						m.errorMsg = "This model requires Apple Silicon (M1/M2/M3/M4) Mac"
+						return m, nil
+					}
+					
+					// Handle MLX model selection
+					switch advancedIdx {
+					case 3:
+						// Qwen 2.5 MLX
+						m.selectedModel = backend.GetModelByID("qwen2.5-coder-7b-4bit")
+					case 4:
+						// GLM 4.5 Air 3-bit MLX
+						m.selectedModel = backend.GetModelByID("glm-4.5-air-3bit")
+					case 5:
+						// GLM 4.5 Air 4-bit MLX  
+						m.selectedModel = backend.GetModelByID("glm-4.5-air-4bit")
+					case 6:
+						// GLM 4.5 Air 8-bit MLX
+						m.selectedModel = backend.GetModelByID("glm-4.5-air-8bit")
+					}
+					
+					if m.selectedModel != nil {
+						m.state = StateDownloading
+						return m, m.startDownload()
+					}
+				} else if advancedIdx == 7 {
+					// Qwen 2.5 14B Balanced GGUF
+					m.selectedModel = backend.GetRecommendedByTier(backend.TierBalanced)
+					m.state = StateDownloading
+					return m, m.startDownload()
+				} else if advancedIdx == 8 {
+					// Qwen 2.5 3B Light GGUF
+					m.selectedModel = backend.GetModelByID("qwen2.5-3b-q4_k_m")
+					m.state = StateDownloading
+					return m, m.startDownload()
+				} else if advancedIdx == 9 {
+					// GLM 4.5 Air GGUF
+					m.selectedModel = backend.GetModelByID("glm-4.5-air-q2_k")
+					m.state = StateDownloading
+					return m, m.startDownload()
+				}
+			}
 		}
 		
 	case "esc":
 		if m.onSkip != nil {
 			m.onSkip()
 		}
+		// Close the dialog
+		return m, util.CmdHandler(dialogs.CloseDialogMsg{})
 	}
 	
 	return m, nil
@@ -346,21 +554,40 @@ func (m Model) handleSelectionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // Global variables to track download progress
 var (
 	downloadProgress = struct {
+		modelID    string // Track which model is downloading
 		downloaded int64
 		total      int64
 		message    string
 		done       bool
 		err        error
+		cancel     context.CancelFunc // Function to cancel the download
 	}{}
 )
 
 func (m Model) startDownload() tea.Cmd {
+	// Check if model is selected
+	if m.selectedModel == nil {
+		return func() tea.Msg {
+			return DownloadErrorMsg{Error: fmt.Errorf("no model selected")}
+		}
+	}
+	
+	// Cancel any existing download
+	if downloadProgress.cancel != nil {
+		downloadProgress.cancel()
+	}
+	
 	// Reset progress
+	downloadProgress.modelID = m.selectedModel.ID
 	downloadProgress.downloaded = 0
 	downloadProgress.total = m.selectedModel.Size
 	downloadProgress.message = "Starting download..."
 	downloadProgress.done = false
 	downloadProgress.err = nil
+	
+	// Create a cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+	downloadProgress.cancel = cancel
 	
 	// Start download in background
 	go func() {
@@ -372,7 +599,7 @@ func (m Model) startDownload() tea.Cmd {
 		
 		// Setup the model with progress callback
 		err := m.orchestrator.SetupModel(
-			context.Background(),
+			ctx,
 			m.selectedModel,
 			func(downloaded, total int64) {
 				// Update global progress
@@ -392,19 +619,77 @@ func (m Model) startDownload() tea.Cmd {
 		}
 	}()
 	
-	// Return a ticker to poll progress
-	return m.tickDownloadProgress()
+	// Send an immediate progress message to ensure UI updates
+	immediateProgress := func() tea.Msg {
+		return DownloadProgressMsg{
+			Downloaded: 0,
+			Total:      m.selectedModel.Size,
+			Message:    "Starting download...",
+		}
+	}
+	
+	// Return both immediate update and ticker
+	return tea.Batch(
+		immediateProgress,
+		m.tickDownloadProgress(),
+	)
 }
 
 func (m Model) tickDownloadProgress() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
-		if downloadProgress.done {
-			return DownloadCompleteMsg{}
-		}
+		// Check for error first (including cancellation)
 		if downloadProgress.err != nil {
 			return DownloadErrorMsg{Error: downloadProgress.err}
 		}
+		// Only return complete if done without error
+		if downloadProgress.done {
+			return DownloadCompleteMsg{}
+		}
 		return DownloadProgressMsg{
+			Downloaded: downloadProgress.downloaded,
+			Total:      downloadProgress.total,
+			Message:    downloadProgress.message,
+		}
+	})
+}
+
+// tickBackgroundDownload continues to monitor download progress after minimizing
+func (m Model) tickBackgroundDownload() tea.Cmd {
+	return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+		// Check for error first (including cancellation)
+		if downloadProgress.err != nil {
+			return DownloadErrorMsg{Error: downloadProgress.err}
+		}
+		// Only return complete if done without error
+		if downloadProgress.done {
+			// Send completion notification to main UI
+			return DownloadCompleteMsg{}
+		}
+		// Send progress updates to main UI for background status
+		return BackgroundDownloadProgressMsg{
+			Model:      m.selectedModel,
+			Downloaded: downloadProgress.downloaded,
+			Total:      downloadProgress.total,
+			Message:    downloadProgress.message,
+		}
+	})
+}
+
+// ContinueBackgroundTicker continues the background download ticker
+func ContinueBackgroundTicker(model *backend.ModelOption) tea.Cmd {
+	return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+		// Check for error first (including cancellation)
+		if downloadProgress.err != nil {
+			return DownloadErrorMsg{Error: downloadProgress.err}
+		}
+		// Only return complete if done without error
+		if downloadProgress.done {
+			// Send completion notification to main UI
+			return DownloadCompleteMsg{}
+		}
+		// Send progress updates to main UI for background status
+		return BackgroundDownloadProgressMsg{
+			Model:      model,
 			Downloaded: downloadProgress.downloaded,
 			Total:      downloadProgress.total,
 			Message:    downloadProgress.message,
@@ -423,7 +708,7 @@ func (m Model) View() string {
 	case StateHFFileSelect:
 		return m.renderHFFileSelect()
 	case StateDownloading:
-		return m.renderDownloading()
+		return m.renderDownloadingAnimated()
 	case StateComplete:
 		return m.renderComplete()
 	case StateError:
@@ -450,142 +735,201 @@ func (m Model) renderSelection() string {
 		Bold(true).
 		Foreground(lipgloss.Color("70")).
 		MarginBottom(1).
-		Render("🌿 Welcome to Toke!")
+		Render("🌿 New Model")
 	
 	subtitle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
 		MarginBottom(2).
-		Render("Choose a local model to download:")
-	
-	if !m.isLocalOnly {
-		subtitle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			MarginBottom(2).
-			Render("No AI providers configured. Choose an option to get started:")
-	}
+		Render("Choose how to add a new model:")
 	
 	s.WriteString(title + "\n")
 	s.WriteString(subtitle + "\n\n")
 	
-	// Main options
+	// All options in a single list
 	var options []struct {
 		label string
 		desc  string
+		isSection bool
 	}
 	
-	// Always show recommended model first
+	// Section header for local models
 	options = append(options, struct {
 		label string
 		desc  string
+		isSection bool
 	}{
-		"Download Qwen 2.5 Coder 7B (4GB) - Recommended",
+		"── Download Local Models ──",
+		"",
+		true,
+	})
+	
+	// Add action options
+	options = append(options, struct {
+		label string
+		desc  string
+		isSection bool
+	}{
+		"🔑 Setup API Provider",
+		"Use OpenAI, Anthropic, or other cloud services",
+		false,
+	})
+	
+	options = append(options, struct {
+		label string
+		desc  string
+		isSection bool
+	}{
+		"❌ Cancel",
+		"Return to chat",
+		false,
+	})
+	
+	// Add local model options
+	options = append(options, struct {
+		label string
+		desc  string
+		isSection bool
+	}{
+		"Qwen 2.5 Coder 7B (4GB) - Recommended",
 		"Best coding model, runs locally with complete privacy",
+		false,
 	})
 	
-	// Only show API key option if not in local-only mode
-	if !m.isLocalOnly {
-		options = append(options, struct {
-			label string
-			desc  string
-		}{
-			"Enter API key for cloud provider",
-			"Use OpenAI, Anthropic, or other cloud services",
-		})
-	}
-	
-	// Browse models option
 	options = append(options, struct {
 		label string
 		desc  string
+		isSection bool
 	}{
-		"Browse other models",
-		"See more local model options",
+		"Browse recent Hugging Face models 🆕",
+		"See the latest models uploaded to Hugging Face",
+		false,
 	})
 	
-	// Skip option
 	options = append(options, struct {
 		label string
 		desc  string
+		isSection bool
 	}{
-		"Skip for now",
-		"Configure later in settings",
+		"Search Hugging Face models 🔍",
+		"Search for specific models by name or type",
+		false,
 	})
 	
-	// Add advanced options if showing
-	if m.showAdvanced {
-		s.WriteString(lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			MarginTop(1).
-			Render("\nAdvanced Options:") + "\n\n")
-			
-		options = append(options, []struct {
-			label string
-			desc  string
-		}{
-			{
-				"Browse recent Hugging Face models 🆕",
-				"See the latest models uploaded to Hugging Face",
-			},
-			{
-				"Search Hugging Face models 🔍",
-				"Search for specific models by name or type",
-			},
-			{
-				"Qwen 2.5 14B (8GB) - Balanced",
-				"Larger model with better reasoning",
-			},
-			{
-				"Qwen 2.5 3B (2GB) - Light",
-				"Smaller, faster model for simple tasks",
-			},
-			{
-				"GLM 4.5 Air (44GB) - Power User",
-				"Massive 107B parameter model (64GB RAM required)",
-			},
-		}...)
+	// Add MLX models - show all but mark unavailable if not on Apple Silicon
+	isAppleSilicon := backend.IsAppleSilicon()
+	
+	mlxSuffix := " 🍎"
+	if !isAppleSilicon {
+		mlxSuffix = " 🍎 [Requires Apple Silicon]"
 	}
+	
+	options = append(options, struct {
+		label string
+		desc  string
+		isSection bool
+	}{
+		"Qwen 2.5 Coder 7B (MLX)" + mlxSuffix,
+		"5GB MLX model - 20-30% faster than GGUF on Apple Silicon",
+		false,
+	})
+	options = append(options, struct {
+		label string
+		desc  string
+		isSection bool
+	}{
+		"GLM 4.5 Air 3-bit (MLX)" + mlxSuffix,
+		"13GB model - Most efficient 106B for 16GB RAM Macs",
+		false,
+	})
+	options = append(options, struct {
+		label string
+		desc  string
+		isSection bool
+	}{
+		"GLM 4.5 Air 4-bit (MLX)" + mlxSuffix,
+		"56GB model - Balanced 106B for 24GB+ RAM Macs",
+		false,
+	})
+	options = append(options, struct {
+		label string
+		desc  string
+		isSection bool
+	}{
+		"GLM 4.5 Air 8-bit (MLX)" + mlxSuffix,
+		"34GB model - Highest quality 106B for 48GB+ RAM Macs",
+		false,
+	})
+	
+	// Add standard GGUF models
+	options = append(options, struct {
+		label string
+		desc  string
+		isSection bool
+	}{
+		"Qwen 2.5 14B (8GB) - Balanced",
+		"Larger model with better reasoning",
+		false,
+	})
+	options = append(options, struct {
+		label string
+		desc  string
+		isSection bool
+	}{
+		"Qwen 2.5 3B (2GB) - Light",
+		"Smaller, faster model for simple tasks",
+		false,
+	})
+	options = append(options, struct {
+		label string
+		desc  string
+		isSection bool
+	}{
+		"GLM 4.5 Air Q2_K (44GB) - Power User",
+		"Massive 107B parameter model (64GB RAM required)",
+		false,
+	})
 	
 	// Render options
 	for i, opt := range options {
-		cursor := "  "
-		if i == m.selectedOption {
-			cursor = "→ "
+		if opt.isSection {
+			// Render section header
+			sectionStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("241")).
+				Bold(true)
+			s.WriteString("\n" + sectionStyle.Render(opt.label) + "\n\n")
+		} else {
+			cursor := "  "
+			if i == m.selectedOption {
+				cursor = "→ "
+			}
+			
+			label := opt.label
+			if i == m.selectedOption {
+				label = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("70")).
+					Bold(true).
+					Render(label)
+			}
+			
+			desc := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("241")).
+				PaddingLeft(2).
+				Render(opt.desc)
+			
+			s.WriteString(cursor + label + "\n")
+			if i == m.selectedOption && opt.desc != "" {
+				s.WriteString("  " + desc + "\n")
+			}
+			s.WriteString("\n")
 		}
-		
-		label := opt.label
-		if i == m.selectedOption {
-			label = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("70")).
-				Bold(true).
-				Render(label)
-		}
-		
-		desc := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			PaddingLeft(2).
-			Render(opt.desc)
-		
-		s.WriteString(cursor + label + "\n")
-		if i == m.selectedOption && opt.desc != "" {
-			s.WriteString("  " + desc + "\n")
-		}
-		s.WriteString("\n")
 	}
 	
 	// Footer
-	if !m.showAdvanced {
-		footer := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			MarginTop(2).
-			Render("Press TAB to show advanced options • ESC to skip")
-		s.WriteString(footer)
-	} else {
-		footer := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			MarginTop(2).
-			Render("Press TAB to hide advanced options • ESC to skip")
-		s.WriteString(footer)
-	}
+	footer := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		MarginTop(2).
+		Render("Press ENTER to select • ESC to cancel")
+	s.WriteString(footer)
 	
 	return s.String()
 }

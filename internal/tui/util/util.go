@@ -36,6 +36,7 @@ const (
 	InfoTypeInfo InfoType = iota
 	InfoTypeWarn
 	InfoTypeError
+	InfoTypeSuccess
 )
 
 func ReportInfo(info string) tea.Cmd {

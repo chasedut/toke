@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -14,10 +15,12 @@ import (
 	"github.com/chasedut/toke/internal/llm/agent"
 	"github.com/chasedut/toke/internal/permission"
 	"github.com/chasedut/toke/internal/pubsub"
+	"github.com/chasedut/toke/internal/shell"
 	cmpChat "github.com/chasedut/toke/internal/tui/components/chat"
 	"github.com/chasedut/toke/internal/tui/components/chat/splash"
 	"github.com/chasedut/toke/internal/tui/components/completions"
 	"github.com/chasedut/toke/internal/tui/components/core"
+	"github.com/chasedut/toke/internal/tui/components/core/background"
 	"github.com/chasedut/toke/internal/tui/components/core/layout"
 	"github.com/chasedut/toke/internal/tui/components/core/status"
 	"github.com/chasedut/toke/internal/tui/components/dialogs"
@@ -29,10 +32,15 @@ import (
 	"github.com/chasedut/toke/internal/tui/components/dialogs/permissions"
 	"github.com/chasedut/toke/internal/tui/components/dialogs/quit"
 	"github.com/chasedut/toke/internal/tui/components/dialogs/sessions"
+	shellDlg "github.com/chasedut/toke/internal/tui/components/dialogs/shell"
+	"github.com/chasedut/toke/internal/tui/components/dialogs/ngrokauth"
+	webshareDialog "github.com/chasedut/toke/internal/tui/components/dialogs/webshare"
+	"github.com/chasedut/toke/internal/tui/loading"
 	"github.com/chasedut/toke/internal/tui/page"
 	"github.com/chasedut/toke/internal/tui/page/chat"
 	"github.com/chasedut/toke/internal/tui/styles"
 	"github.com/chasedut/toke/internal/tui/util"
+	"github.com/chasedut/toke/internal/webshare"
 	"github.com/charmbracelet/lipgloss/v2"
 )
 
@@ -74,25 +82,143 @@ type appModel struct {
 
 	// Chat Page Specific
 	selectedSessionID string // The ID of the currently selected session
+	
+	// Shell shortcut check
+	hasCheckedShortcut bool
+	
+	// Loading state
+	isLoading      bool
+	loadingScreen  tea.Model
+	
+	// Background downloads
+	downloadManager *background.DownloadManager
+	
+	// Web sharing
+	webShare *webshare.SessionShare
 }
 
 // Init initializes the application model and returns initial commands.
-func (a appModel) Init() tea.Cmd {
+func (a *appModel) Init() tea.Cmd {
 	var cmds []tea.Cmd
-	cmd := a.pages[a.currentPage].Init()
-	cmds = append(cmds, cmd)
-	a.loadedPages[a.currentPage] = true
+	
+	// Initialize dialog component (needed even during loading)
+	if a.dialog != nil {
+		cmd := a.dialog.Init()
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	
+	// If loading, initialize the loading screen
+	if a.isLoading {
+		if a.loadingScreen != nil {
+			cmd := a.loadingScreen.Init()
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		// Start the actual initialization after a brief delay
+		initCmd := a.startInitialization()
+		if initCmd != nil {
+			cmds = append(cmds, initCmd)
+		}
+		return tea.Batch(cmds...)
+	}
+	
+	// Normal initialization
+	if page, exists := a.pages[a.currentPage]; exists && page != nil {
+		cmd := page.Init()
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		a.loadedPages[a.currentPage] = true
+	}
 
-	cmd = a.status.Init()
-	cmds = append(cmds, cmd)
+	if a.status != nil {
+		cmd := a.status.Init()
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
 
 	cmds = append(cmds, tea.EnableMouseAllMotion)
+	
+	// Check for shell shortcuts immediately
+	shortcutCmd := a.checkShellShortcuts()
+	if shortcutCmd != nil {
+		cmds = append(cmds, shortcutCmd)
+	}
 
 	return tea.Batch(cmds...)
 }
 
+// InitializationCompleteMsg signals that initialization is complete
+type InitializationCompleteMsg struct{}
+
 // Update handles incoming messages and updates the application state.
 func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle loading screen updates
+	if a.isLoading {
+		switch msg := msg.(type) {
+		case tea.WindowSizeMsg:
+			if a.loadingScreen != nil {
+				a.loadingScreen, _ = a.loadingScreen.Update(msg)
+			}
+			a.wWidth, a.wHeight = msg.Width, msg.Height
+			return a, nil
+			
+		case InitializationCompleteMsg:
+			// Transition from loading to main app
+			a.isLoading = false
+			// Initialize the main app components only if not already initialized
+			var cmds []tea.Cmd
+			if _, loaded := a.loadedPages[a.currentPage]; !loaded {
+				cmd := a.pages[a.currentPage].Init()
+				cmds = append(cmds, cmd)
+				a.loadedPages[a.currentPage] = true
+			}
+			
+			// Initialize status if needed
+			if a.status != nil {
+				cmd := a.status.Init()
+				if cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			}
+			
+			// Apply initial window size if we have it
+			if a.wWidth > 0 && a.wHeight > 0 {
+				cmds = append(cmds, a.handleWindowResize(a.wWidth, a.wHeight))
+			}
+			
+			cmds = append(cmds, tea.EnableMouseAllMotion)
+			cmds = append(cmds, a.checkShellShortcuts())
+			
+			return a, tea.Batch(cmds...)
+			
+		// Dialog messages should be handled even during loading
+		case dialogs.OpenDialogMsg, dialogs.CloseDialogMsg:
+			u, dialogCmd := a.dialog.Update(msg)
+			a.dialog = u.(dialogs.DialogCmp)
+			// Also update loading screen if active
+			if a.loadingScreen != nil {
+				var loadingCmd tea.Cmd
+				a.loadingScreen, loadingCmd = a.loadingScreen.Update(msg)
+				return a, tea.Batch(dialogCmd, loadingCmd)
+			}
+			return a, dialogCmd
+			
+		default:
+			// Update loading screen animation
+			if a.loadingScreen != nil {
+				var cmd tea.Cmd
+				a.loadingScreen, cmd = a.loadingScreen.Update(msg)
+				return a, cmd
+			}
+		}
+		return a, nil
+	}
+	
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 	a.isConfigured = config.HasInitialDataConfig()
@@ -167,17 +293,112 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Model: models.NewModelDialogCmp(),
 			},
 		)
+	case commands.AddNewModelsMsg:
+		// Show the new Add Models dialog (similar to Switch Model dialog)
+		return a, util.CmdHandler(dialogs.OpenDialogMsg{Model: models.NewAddModelsCmp()})
+	
+	case backendDlg.MinimizeToBackgroundMsg:
+		// Add download to background manager
+		a.downloadManager.AddDownload(msg.Model, msg.Progress, msg.Downloaded, msg.Total)
+		// Close the dialog
+		u, cmd := a.dialog.Update(dialogs.CloseDialogMsg{})
+		a.dialog = u.(dialogs.DialogCmp)
+		// Show info in status
+		return a, tea.Batch(
+			cmd,
+			util.CmdHandler(util.InfoMsg{
+				Type: util.InfoTypeInfo,
+				Msg:  fmt.Sprintf("📥 Downloading %s in background... Press 'b' to continue in background", msg.Model.Name),
+				TTL:  5 * time.Second,
+			}),
+		)
+	
+	case backendDlg.DownloadProgressMsg:
+		// Forward to dialog if it's open (for modal progress updates)
+		if a.dialog.HasDialogs() {
+			u, cmd := a.dialog.Update(msg)
+			a.dialog = u.(dialogs.DialogCmp)
+			return a, cmd
+		}
+		return a, nil
+	
+	case backendDlg.BackgroundDownloadProgressMsg:
+		// Update background download manager with progress
+		if a.downloadManager != nil && msg.Model != nil {
+			progress := float64(0)
+			if msg.Total > 0 {
+				progress = float64(msg.Downloaded) / float64(msg.Total)
+			}
+			a.downloadManager.UpdateProgress(msg.Model.ID, progress, msg.Downloaded, msg.Total)
+			
+			// Continue polling for background download progress
+			// The backend dialog's tickBackgroundDownload continues to send these messages
+			// We need to re-trigger it to keep the polling going
+			return a, backendDlg.ContinueBackgroundTicker(msg.Model)
+		}
+		return a, nil
+	
+	case backendDlg.DownloadCompleteMsg:
+		// Mark download as complete in manager
+		// Note: We need to track which model completed
+		if a.downloadManager != nil && a.downloadManager.HasActiveDownloads() {
+			// Mark the first active download as complete (simplified)
+			for _, dl := range a.downloadManager.GetActiveDownloads() {
+				if dl != nil && dl.Model != nil {
+					a.downloadManager.CompleteDownload(dl.Model.ID)
+					break
+				}
+			}
+		}
+		
+		// Forward to dialog if it's open
+		var cmds []tea.Cmd
+		if a.dialog.HasDialogs() {
+			u, cmd := a.dialog.Update(msg)
+			a.dialog = u.(dialogs.DialogCmp)
+			cmds = append(cmds, cmd)
+		}
+		
+		// Show notification that download is complete
+		cmds = append(cmds, util.CmdHandler(util.InfoMsg{
+			Type: util.InfoTypeInfo,
+			Msg:  "✅ Model download complete! Your new model is ready to use.",
+			TTL:  10 * time.Second,
+		}))
+		
+		return a, tea.Batch(cmds...)
 	// Compact
 	case commands.CompactMsg:
 		return a, util.CmdHandler(dialogs.OpenDialogMsg{
 			Model: compact.NewCompactDialogCmp(a.app.CoderAgent, msg.SessionID, true),
 		})
+	case commands.InviteBuddyMsg:
+		// Start the web share server
+		if msg.SessionID == "" {
+			// No active session
+			return a, util.CmdHandler(util.InfoMsg{
+				Type: util.InfoTypeWarn,
+				Msg:  "Please start a chat session first before inviting a buddy",
+				TTL:  3 * time.Second,
+			})
+		}
+		// Check if already sharing
+		if a.webShare != nil {
+			// Show existing share dialog
+			return a, util.CmdHandler(dialogs.OpenDialogMsg{
+				Model: webshareDialog.NewShareDialog(msg.SessionID, a.webShare.GetURLs()),
+			})
+		}
+		return a, a.startWebShare(msg.SessionID)
 	case commands.QuitMsg:
 		return a, util.CmdHandler(dialogs.OpenDialogMsg{
 			Model: quit.NewQuitDialog(),
 		})
 	case commands.ToggleYoloModeMsg:
 		a.app.Permissions.SetSkipRequests(!a.app.Permissions.SkipRequests())
+	case ngrokauth.NgrokAuthSuccessMsg:
+		// Retry web share after successful auth
+		return a, a.startWebShare(msg.SessionID)
 	case commands.ToggleHelpMsg:
 		a.status.ToggleFullHelp()
 		a.showingFullHelp = !a.showingFullHelp
@@ -309,6 +530,17 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.pages[a.currentPage] = updated.(util.Model)
 		cmds = append(cmds, pageCmd)
 		return a, tea.Batch(cmds...)
+	
+	case ShellShortcutCheckMsg:
+		// Only show dialog once per session and if needed
+		if msg.NeedsSetup && !a.hasCheckedShortcut && a.isConfigured {
+			a.hasCheckedShortcut = true
+			dialog, err := shellDlg.NewShellSetupDialog()
+			if err == nil {
+				return a, util.CmdHandler(dialogs.OpenDialogMsg{Model: dialog})
+			}
+		}
+		return a, nil
 	// Key Press Messages
 	case tea.KeyPressMsg:
 		return a, a.handleKeyPressMsg(msg)
@@ -392,6 +624,19 @@ func (a *appModel) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			return cmd
 		}
 	}
+	
+	// Check for 'b' key to toggle download modal (only when no dialog is open)
+	if msg.String() == "b" && !a.dialog.HasDialogs() && a.downloadManager != nil && a.downloadManager.HasActiveDownloads() {
+		// Get the first active download
+		downloads := a.downloadManager.GetActiveDownloads()
+		if len(downloads) > 0 {
+			// Show the download modal for the active download
+			return util.CmdHandler(dialogs.OpenDialogMsg{
+				Model: backendDlg.NewWithModel(nil, downloads[0].Model, nil),
+			})
+		}
+	}
+	
 	switch {
 	// help
 	case key.Matches(msg, a.keyMap.Help):
@@ -492,6 +737,24 @@ func (a *appModel) View() tea.View {
 	var view tea.View
 	t := styles.CurrentTheme()
 	view.BackgroundColor = t.BgBase
+	
+	// Show loading screen if loading
+	if a.isLoading && a.loadingScreen != nil {
+		if ls, ok := a.loadingScreen.(*loading.LoadingScreen); ok {
+			layers := []*lipgloss.Layer{
+				lipgloss.NewLayer(ls.View()),
+			}
+			
+			// Add dialog layers if active (even during loading)
+			if a.dialog != nil && a.dialog.HasDialogs() {
+				layers = append(layers, a.dialog.GetLayers()...)
+			}
+			
+			view.Layer = lipgloss.NewCanvas(layers...)
+			return view
+		}
+	}
+	
 	if a.wWidth < 25 || a.wHeight < 15 {
 		view.Layer = lipgloss.NewCanvas(
 			lipgloss.NewLayer(
@@ -518,6 +781,14 @@ func (a *appModel) View() tea.View {
 	components := []string{
 		pageView,
 	}
+	// Add download status if there are active downloads
+	if a.downloadManager != nil && a.downloadManager.HasActiveDownloads() {
+		downloadStatus := a.renderDownloadStatus()
+		if downloadStatus != "" {
+			components = append(components, downloadStatus)
+		}
+	}
+	
 	components = append(components, a.status.View())
 
 	appView := lipgloss.JoinVertical(lipgloss.Top, components...)
@@ -566,11 +837,34 @@ func (a *appModel) View() tea.View {
 	return view
 }
 
+// renderDownloadStatus renders the background download status bar
+func (a *appModel) renderDownloadStatus() string {
+	if a.downloadManager == nil {
+		return ""
+	}
+	
+	status := a.downloadManager.GetStatusString()
+	if status == "" {
+		return ""
+	}
+	
+	t := styles.CurrentTheme()
+	return t.S().Base.
+		Background(t.BgSubtle).
+		Foreground(t.FgMuted).
+		Padding(0, 1).
+		Width(a.width).
+		Render(status)
+}
+
 // New creates and initializes a new TUI application model.
 func New(app *app.App) tea.Model {
 	chatPage := chat.New(app)
 	keyMap := DefaultKeyMap()
 	keyMap.pageBindings = chatPage.Bindings()
+
+	// Initialize dialog component
+	dialogCmp := dialogs.NewDialogCmp()
 
 	model := &appModel{
 		currentPage: chat.ChatPageID,
@@ -583,9 +877,147 @@ func New(app *app.App) tea.Model {
 			chat.ChatPageID: chatPage,
 		},
 
-		dialog:      dialogs.NewDialogCmp(),
+		dialog:      dialogCmp,
 		completions: completions.New(),
+		
+		// Start with loading screen
+		isLoading:     true,
+		loadingScreen: loading.NewSimple(),
+		
+		// Background downloads
+		downloadManager: background.NewDownloadManager(),
 	}
 
 	return model
+}
+
+// ShellShortcutCheckMsg is sent when shell shortcut check is complete
+type ShellShortcutCheckMsg struct {
+	NeedsSetup bool
+}
+
+// checkShellShortcuts checks if shell shortcuts are installed
+func (a *appModel) checkShellShortcuts() tea.Cmd {
+	return func() tea.Msg {
+		// Check if shortcuts already exist
+		hasShortcut, err := shell.HasShortcut()
+		if err != nil {
+			// Silently ignore errors
+			return nil
+		}
+		
+		// If shortcuts don't exist, return message to show dialog
+		if !hasShortcut {
+			return ShellShortcutCheckMsg{NeedsSetup: true}
+		}
+		
+		return nil
+	}
+}
+
+// startInitialization starts the initialization process
+func (a *appModel) startInitialization() tea.Cmd {
+	return tea.Tick(300*time.Millisecond, func(t time.Time) tea.Msg {
+		// Simulate initialization time
+		// In a real scenario, you could do actual initialization here
+		return InitializationCompleteMsg{}
+	})
+}
+
+
+// findNgrokPath attempts to find ngrok in common locations
+func findNgrokPath() string {
+	// Check common locations
+	paths := []string{
+		"./ngrok",
+		"./build/ngrok",
+		"ngrok", // in PATH
+	}
+	
+	for _, path := range paths {
+		if _, err := exec.LookPath(path); err == nil {
+			return path
+		}
+	}
+	
+	return ""
+}
+
+// startWebShare starts the web sharing server for the session
+func (a *appModel) startWebShare(sessionID string) tea.Cmd {
+	return func() tea.Msg {
+		// Stop any existing web share
+		if a.webShare != nil {
+			a.webShare.Stop()
+			// Notify sidebar to clear URLs
+			defer func() {
+				go func() {
+					time.Sleep(100 * time.Millisecond) // Small delay to ensure cleanup
+					// This would need to be sent through a channel or program command
+				}()
+			}()
+		}
+		
+		// Create new web share
+		a.webShare = webshare.NewSessionShare(sessionID)
+		urls, err := a.webShare.Start()
+		if err != nil {
+			// Check if the error is about ngrok authentication
+			if strings.Contains(err.Error(), "ngrok authentication required") {
+				// Find ngrok path to pass to auth dialog
+				ngrokPath := a.webShare.GetNgrokPath()
+				if ngrokPath == "" {
+					// Try to find it ourselves
+					ngrokPath = findNgrokPath()
+				}
+				
+				// Show ngrok auth dialog
+				return dialogs.OpenDialogMsg{
+					Model: ngrokauth.NewNgrokAuthDialog(ngrokPath, sessionID),
+				}
+			}
+			
+			return util.InfoMsg{
+				Type: util.InfoTypeError,
+				Msg:  fmt.Sprintf("Failed to start web share: %v", err),
+				TTL:  5 * time.Second,
+			}
+		}
+		
+		// Start a goroutine to periodically broadcast updates
+		go func() {
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
+			
+			for {
+				select {
+				case <-ticker.C:
+					if a.webShare != nil {
+						a.webShare.BroadcastUpdate()
+					}
+				}
+			}
+		}()
+		
+		// Return both the dialog and a message to update the sidebar
+		return tea.Batch(
+			func() tea.Msg {
+				return dialogs.OpenDialogMsg{
+					Model: webshareDialog.NewShareDialog(sessionID, urls),
+				}
+			},
+			func() tea.Msg {
+				localURL := ""
+				ngrokURL := ""
+				if urls != nil {
+					localURL = urls.LocalURL
+					ngrokURL = urls.NgrokURL
+				}
+				return commands.WebShareStartedMsg{
+					LocalURL: localURL,
+					NgrokURL: ngrokURL,
+				}
+			},
+		)()
+	}
 }
