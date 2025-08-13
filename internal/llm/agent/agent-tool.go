@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/weedmaps/toke/internal/llm/tools"
-	"github.com/weedmaps/toke/internal/message"
-	"github.com/weedmaps/toke/internal/session"
+	"github.com/chasedut/toke/internal/llm/tools"
+	"github.com/chasedut/toke/internal/message"
+	"github.com/chasedut/toke/internal/session"
 )
 
 type agentTool struct {

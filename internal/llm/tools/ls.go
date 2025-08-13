@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/weedmaps/toke/internal/fsext"
-	"github.com/weedmaps/toke/internal/permission"
+	"github.com/chasedut/toke/internal/fsext"
+	"github.com/chasedut/toke/internal/permission"
 )
 
 type LSParams struct {

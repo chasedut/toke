@@ -8,11 +8,12 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/weedmaps/toke/internal/app"
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/db"
-	"github.com/weedmaps/toke/internal/tui"
-	"github.com/weedmaps/toke/internal/version"
+	"github.com/chasedut/toke/internal/app"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/db"
+	"github.com/chasedut/toke/internal/env"
+	"github.com/chasedut/toke/internal/tui"
+	"github.com/chasedut/toke/internal/version"
 	"github.com/charmbracelet/fang"
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
@@ -80,6 +81,12 @@ toke -y
 }
 
 func Execute() {
+	// Load .env file if it exists
+	if err := env.LoadDotEnv(); err != nil {
+		// Log but don't fail - .env is optional
+		slog.Warn("Failed to load .env file", "error", err)
+	}
+	
 	if err := fang.Execute(
 		context.Background(),
 		rootCmd,
@@ -115,6 +122,11 @@ func setupApp(cmd *cobra.Command) (*app.App, error) {
 	// Connect to DB; this will also run migrations.
 	conn, err := db.Connect(ctx, cfg.Options.DataDirectory)
 	if err != nil {
+		return nil, err
+	}
+	
+	// Initialize global DB for webshare
+	if err := db.InitGlobalDB(ctx, cfg.Options.DataDirectory); err != nil {
 		return nil, err
 	}
 

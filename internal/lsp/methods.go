@@ -4,7 +4,7 @@ package lsp
 import (
 	"context"
 
-	"github.com/weedmaps/toke/internal/lsp/protocol"
+	"github.com/chasedut/toke/internal/lsp/protocol"
 )
 
 // Implementation sends a textDocument/implementation request to the LSP server.

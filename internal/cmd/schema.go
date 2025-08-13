@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/weedmaps/toke/internal/config"
+	"github.com/chasedut/toke/internal/config"
 	"github.com/invopop/jsonschema"
 	"github.com/spf13/cobra"
 )

@@ -11,19 +11,20 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/csync"
-	"github.com/weedmaps/toke/internal/db"
-	"github.com/weedmaps/toke/internal/format"
-	"github.com/weedmaps/toke/internal/history"
-	"github.com/weedmaps/toke/internal/llm/agent"
-	"github.com/weedmaps/toke/internal/log"
-	"github.com/weedmaps/toke/internal/pubsub"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/csync"
+	"github.com/chasedut/toke/internal/db"
+	"github.com/chasedut/toke/internal/format"
+	"github.com/chasedut/toke/internal/history"
+	"github.com/chasedut/toke/internal/llm/agent"
+	"github.com/chasedut/toke/internal/log"
+	"github.com/chasedut/toke/internal/pubsub"
 
-	"github.com/weedmaps/toke/internal/lsp"
-	"github.com/weedmaps/toke/internal/message"
-	"github.com/weedmaps/toke/internal/permission"
-	"github.com/weedmaps/toke/internal/session"
+	"github.com/chasedut/toke/internal/lsp"
+	"github.com/chasedut/toke/internal/message"
+	"github.com/chasedut/toke/internal/backend"
+	"github.com/chasedut/toke/internal/permission"
+	"github.com/chasedut/toke/internal/session"
 )
 
 type App struct {
@@ -51,6 +52,10 @@ type App struct {
 	// global context and cleanup functions
 	globalCtx    context.Context
 	cleanupFuncs []func()
+
+	// Local model backend
+	localBackend    *backend.Orchestrator
+	needsFirstSetup bool
 }
 
 // New initializes a new applcation instance.
@@ -88,14 +93,45 @@ func New(ctx context.Context, conn *sql.DB, cfg *config.Config) (*App, error) {
 	// Initialize LSP clients in the background.
 	app.initLSPClients(ctx)
 
-	// TODO: remove the concept of agent config, most likely.
+	// Check for local model configuration
+	if localConfig, err := cfg.GetLocalModelConfig(); err == nil && localConfig != nil && localConfig.Enabled {
+		// Initialize local backend
+		dataDir := ".toke"
+		if cfg.Options != nil && cfg.Options.DataDirectory != "" {
+			dataDir = cfg.Options.DataDirectory
+		}
+		app.localBackend = backend.NewOrchestrator(dataDir)
+		
+		// Start local backend if model is configured
+		if model := backend.GetModelByID(localConfig.ModelID); model != nil {
+			// Setup and start in background
+			go func() {
+				if err := app.localBackend.SetupModel(ctx, model, func(downloaded, total int64) {
+					// Progress is logged, not shown in non-interactive mode
+					slog.Debug("Model download progress", "downloaded", downloaded, "total", total)
+				}); err != nil {
+					slog.Error("Failed to setup local model", "error", err)
+					return
+				}
+				
+				if err := app.localBackend.Start(ctx); err != nil {
+					slog.Error("Failed to start local backend", "error", err)
+				}
+			}()
+		}
+	}
+
+	// Check if any providers are configured
 	if cfg.IsConfigured() {
 		if err := app.InitCoderAgent(); err != nil {
 			return nil, fmt.Errorf("failed to initialize coder agent: %w", err)
 		}
 	} else {
-		slog.Warn("No agent configuration found")
+		// No providers configured - mark for first-time setup
+		app.needsFirstSetup = true
+		slog.Info("No providers configured - will show first-time setup")
 	}
+	
 	return app, nil
 }
 
@@ -309,10 +345,52 @@ func (app *App) Subscribe(program *tea.Program) {
 	}
 }
 
+// NeedsFirstSetup returns true if the app needs first-time setup
+func (app *App) NeedsFirstSetup() bool {
+	return app.needsFirstSetup
+}
+
+// SetupLocalModel handles the local model setup process
+func (app *App) SetupLocalModel(ctx context.Context, model *backend.ModelOption, progressFn func(status string, downloaded, total int64)) error {
+	// Initialize backend if not already done
+	if app.localBackend == nil {
+		dataDir := ".toke"
+		if app.config.Options != nil && app.config.Options.DataDirectory != "" {
+			dataDir = app.config.Options.DataDirectory
+		}
+		app.localBackend = backend.NewOrchestrator(dataDir)
+	}
+	
+	// Run quick setup
+	if err := app.localBackend.QuickSetup(ctx, progressFn); err != nil {
+		return fmt.Errorf("failed to setup local model: %w", err)
+	}
+	
+	// Configure the model in config
+	if err := app.config.ConfigureLocalModel(model); err != nil {
+		return fmt.Errorf("failed to configure local model: %w", err)
+	}
+	
+	// Initialize the coder agent with the new configuration
+	if err := app.InitCoderAgent(); err != nil {
+		return fmt.Errorf("failed to initialize agent with local model: %w", err)
+	}
+	
+	app.needsFirstSetup = false
+	return nil
+}
+
 // Shutdown performs a graceful shutdown of the application.
 func (app *App) Shutdown() {
 	if app.CoderAgent != nil {
 		app.CoderAgent.CancelAll()
+	}
+
+	// Stop local backend if running
+	if app.localBackend != nil {
+		if err := app.localBackend.Stop(); err != nil {
+			slog.Error("Failed to stop local backend", "error", err)
+		}
 	}
 
 	for cancel := range app.watcherCancelFuncs.Seq() {

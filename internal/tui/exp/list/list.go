@@ -7,11 +7,11 @@ import (
 
 	"github.com/charmbracelet/bubbles/v2/key"
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/weedmaps/toke/internal/csync"
-	"github.com/weedmaps/toke/internal/tui/components/anim"
-	"github.com/weedmaps/toke/internal/tui/components/core/layout"
-	"github.com/weedmaps/toke/internal/tui/styles"
-	"github.com/weedmaps/toke/internal/tui/util"
+	"github.com/chasedut/toke/internal/csync"
+	"github.com/chasedut/toke/internal/tui/components/anim"
+	"github.com/chasedut/toke/internal/tui/components/core/layout"
+	"github.com/chasedut/toke/internal/tui/styles"
+	"github.com/chasedut/toke/internal/tui/util"
 	"github.com/charmbracelet/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
@@ -723,6 +723,8 @@ func (l *list[T]) selectLastItem() {
 }
 
 func (l *list[T]) firstSelectableItemAbove(inx int) int {
+	originalInx := inx
+	// First try to find a selectable item above the current index
 	for i := inx - 1; i >= 0; i-- {
 		item, ok := l.items.Get(i)
 		if !ok {
@@ -732,14 +734,27 @@ func (l *list[T]) firstSelectableItemAbove(inx int) int {
 			return i
 		}
 	}
-	if inx == 0 && l.wrap {
-		return l.firstSelectableItemAbove(l.items.Len())
+	// If we didn't find any selectable item above and wrap is enabled,
+	// wrap to the bottom of the list (but only if we haven't already wrapped)
+	if l.wrap && originalInx != l.items.Len() {
+		// Start from the end and find the last selectable item
+		for i := l.items.Len() - 1; i > originalInx; i-- {
+			item, ok := l.items.Get(i)
+			if !ok {
+				continue
+			}
+			if _, ok := any(item).(layout.Focusable); ok {
+				return i
+			}
+		}
 	}
 	return ItemNotFound
 }
 
 func (l *list[T]) firstSelectableItemBelow(inx int) int {
+	originalInx := inx
 	itemsLen := l.items.Len()
+	// First try to find a selectable item below the current index
 	for i := inx + 1; i < itemsLen; i++ {
 		item, ok := l.items.Get(i)
 		if !ok {
@@ -749,8 +764,19 @@ func (l *list[T]) firstSelectableItemBelow(inx int) int {
 			return i
 		}
 	}
-	if inx == itemsLen-1 && l.wrap {
-		return l.firstSelectableItemBelow(-1)
+	// If we didn't find any selectable item below and wrap is enabled,
+	// wrap to the top of the list (but only if we haven't already wrapped)
+	if l.wrap && originalInx != -1 {
+		// Start from the beginning and find the first selectable item
+		for i := 0; i < originalInx; i++ {
+			item, ok := l.items.Get(i)
+			if !ok {
+				continue
+			}
+			if _, ok := any(item).(layout.Focusable); ok {
+				return i
+			}
+		}
 	}
 	return ItemNotFound
 }

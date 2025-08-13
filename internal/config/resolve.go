@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/weedmaps/toke/internal/env"
-	"github.com/weedmaps/toke/internal/shell"
+	"github.com/chasedut/toke/internal/env"
+	"github.com/chasedut/toke/internal/shell"
 )
 
 type VariableResolver interface {

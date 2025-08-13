@@ -6,8 +6,8 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
-	anim "github.com/weedmaps/toke/internal/tui/components/anim"
-	"github.com/weedmaps/toke/internal/tui/styles"
+	anim "github.com/chasedut/toke/internal/tui/components/anim"
+	"github.com/chasedut/toke/internal/tui/styles"
 	"github.com/charmbracelet/lipgloss/v2"
 )
 

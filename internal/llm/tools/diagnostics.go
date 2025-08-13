@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/weedmaps/toke/internal/lsp"
-	"github.com/weedmaps/toke/internal/lsp/protocol"
+	"github.com/chasedut/toke/internal/lsp"
+	"github.com/chasedut/toke/internal/lsp/protocol"
 )
 
 type DiagnosticsParams struct {

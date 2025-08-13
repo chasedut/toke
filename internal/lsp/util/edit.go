@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/weedmaps/toke/internal/lsp/protocol"
+	"github.com/chasedut/toke/internal/lsp/protocol"
 )
 
 func applyTextEdits(uri protocol.DocumentURI, edits []protocol.TextEdit) error {

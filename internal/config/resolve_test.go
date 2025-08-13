@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/weedmaps/toke/internal/env"
+	"github.com/chasedut/toke/internal/env"
 	"github.com/stretchr/testify/require"
 )
 

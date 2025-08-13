@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/weedmaps/toke/internal/log"
-	"github.com/weedmaps/toke/internal/lsp"
-	"github.com/weedmaps/toke/internal/lsp/watcher"
+	"github.com/chasedut/toke/internal/log"
+	"github.com/chasedut/toke/internal/lsp"
+	"github.com/chasedut/toke/internal/lsp/watcher"
 )
 
 // initLSPClients initializes LSP clients.

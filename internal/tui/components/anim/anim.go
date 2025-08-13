@@ -15,7 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/lucasb-eyer/go-colorful"
 
-	"github.com/weedmaps/toke/internal/csync"
+	"github.com/chasedut/toke/internal/csync"
 )
 
 const (

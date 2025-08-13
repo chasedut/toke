@@ -7,10 +7,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/tui/exp/list"
-	"github.com/weedmaps/toke/internal/tui/styles"
-	"github.com/weedmaps/toke/internal/tui/util"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/tui/exp/list"
+	"github.com/chasedut/toke/internal/tui/styles"
+	"github.com/chasedut/toke/internal/tui/util"
 )
 
 type listModel = list.FilterableGroupList[list.CompletionItem[ModelOption]]
@@ -101,7 +101,7 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 
 	var groups []list.Group[list.CompletionItem[ModelOption]]
 	// first none section
-	selectedItemID := ""
+	// selectedItemID := "" // Commented out - we don't auto-select to allow free navigation
 
 	cfg := config.Get()
 	var currentModel config.SelectedModel
@@ -113,6 +113,34 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 
 	configuredIcon := t.S().Base.Foreground(t.Success).Render(styles.CheckIcon)
 	configured := fmt.Sprintf("%s %s", configuredIcon, t.S().Subtle.Render("Configured"))
+	
+	// Add Local Models section only if a local model is configured
+	if localConfig, _ := cfg.GetLocalModelConfig(); localConfig != nil && localConfig.Enabled {
+		localSection := list.NewItemSection("🖥️  Local Models")
+		localSection.SetInfo(configured)
+		
+		localGroup := list.Group[list.CompletionItem[ModelOption]]{
+			Section: localSection,
+		}
+		
+		localModelItem := list.NewCompletionItem(
+			fmt.Sprintf("✓ %s (Active)", localConfig.ModelID),
+			ModelOption{
+				Provider: catwalk.Provider{ID: "local", Name: "Local Model"},
+				Model:    catwalk.Model{ID: localConfig.ModelID, Name: localConfig.ModelID},
+			},
+			list.WithCompletionID(fmt.Sprintf("local:%s", localConfig.ModelID)),
+		)
+		localGroup.Items = append(localGroup.Items, localModelItem)
+		
+		// Mark if this is the currently selected model (but don't auto-focus)
+		if currentModel.Provider == "local" {
+			// Just for tracking, not for selection
+			// selectedItemID = localModelItem.ID()
+		}
+		
+		groups = append(groups, localGroup)
+	}
 
 	// Create a map to track which providers we've already added
 	addedProviders := make(map[string]bool)
@@ -125,6 +153,11 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 	}
 	for providerID, providerConfig := range cfg.Providers.Seq2() {
 		if providerConfig.Disable {
+			continue
+		}
+		
+		// Skip the local provider as it's already handled above
+		if providerID == "local" {
 			continue
 		}
 
@@ -167,7 +200,13 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 				Section: section,
 			}
 			for _, model := range configProvider.Models {
-				item := list.NewCompletionItem(model.Name, ModelOption{
+				name := model.Name
+				// Add checkmark if this is the current model
+				if model.ID == currentModel.Model && string(configProvider.ID) == currentModel.Provider {
+					name = "✓ " + name + " (Active)"
+				}
+				
+				item := list.NewCompletionItem(name, ModelOption{
 					Provider: configProvider,
 					Model:    model,
 				},
@@ -177,9 +216,10 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 				)
 
 				group.Items = append(group.Items, item)
-				if model.ID == currentModel.Model && string(configProvider.ID) == currentModel.Provider {
-					selectedItemID = item.ID()
-				}
+				// Don't auto-select, just mark visually
+				// if model.ID == currentModel.Model && string(configProvider.ID) == currentModel.Provider {
+				// 	selectedItemID = item.ID()
+				// }
 			}
 			groups = append(groups, group)
 
@@ -191,6 +231,11 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 	for _, provider := range m.providers {
 		// Skip if we already added this provider as an unknown provider
 		if addedProviders[string(provider.ID)] {
+			continue
+		}
+		
+		// Skip the local provider as it's already handled above
+		if string(provider.ID) == "local" {
 			continue
 		}
 
@@ -212,7 +257,13 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 			Section: section,
 		}
 		for _, model := range provider.Models {
-			item := list.NewCompletionItem(model.Name, ModelOption{
+			name := model.Name
+			// Add checkmark if this is the current model
+			if model.ID == currentModel.Model && string(provider.ID) == currentModel.Provider {
+				name = "✓ " + name + " (Active)"
+			}
+			
+			item := list.NewCompletionItem(name, ModelOption{
 				Provider: provider,
 				Model:    model,
 			},
@@ -221,9 +272,10 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 				),
 			)
 			group.Items = append(group.Items, item)
-			if model.ID == currentModel.Model && string(provider.ID) == currentModel.Provider {
-				selectedItemID = item.ID()
-			}
+			// Don't auto-select, just mark visually
+			// if model.ID == currentModel.Model && string(provider.ID) == currentModel.Provider {
+			// 	selectedItemID = item.ID()
+			// }
 		}
 		groups = append(groups, group)
 	}
@@ -235,10 +287,15 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 	if cmd != nil {
 		cmds = append(cmds, cmd)
 	}
-	cmd = m.list.SetSelected(selectedItemID)
-	if cmd != nil {
-		cmds = append(cmds, cmd)
-	}
+	
+	// Don't auto-select any item - let user navigate freely from the beginning
+	// This allows navigation to setup options at the top
+	// if selectedItemID != "" {
+	// 	cmd = m.list.SetSelected(selectedItemID)
+	// 	if cmd != nil {
+	// 		cmds = append(cmds, cmd)
+	// 	}
+	// }
 
 	return tea.Sequence(cmds...)
 }

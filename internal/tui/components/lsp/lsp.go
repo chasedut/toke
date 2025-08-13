@@ -6,12 +6,12 @@ import (
 
 	"github.com/charmbracelet/lipgloss/v2"
 
-	"github.com/weedmaps/toke/internal/app"
-	"github.com/weedmaps/toke/internal/config"
-	"github.com/weedmaps/toke/internal/lsp"
-	"github.com/weedmaps/toke/internal/lsp/protocol"
-	"github.com/weedmaps/toke/internal/tui/components/core"
-	"github.com/weedmaps/toke/internal/tui/styles"
+	"github.com/chasedut/toke/internal/app"
+	"github.com/chasedut/toke/internal/config"
+	"github.com/chasedut/toke/internal/lsp"
+	"github.com/chasedut/toke/internal/lsp/protocol"
+	"github.com/chasedut/toke/internal/tui/components/core"
+	"github.com/chasedut/toke/internal/tui/styles"
 )
 
 // RenderOptions contains options for rendering LSP lists.
