@@ -24,14 +24,72 @@ Toke is an AI-powered coding assistant with serious weed culture vibes. Fork of 
 
 ## Installation 🌿
 
+### Quick Build (Recommended) 🚀
+
+The easiest way to build toke with all backends (llama, MLX, ngrok):
+
 ```bash
-# Build from source
+# Clone the repository
 git clone https://github.com/chasedut/toke.git
 cd toke
-make build
 
-# Or install directly with Go
+# Build everything with one command
+./build.sh --archive
+
+# Navigate to your platform-specific build
+cd build/toke-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/;s/aarch64\|arm64/arm64/')
+./toke
+```
+
+This will:
+- ✅ Auto-detect your platform (macOS/Linux, ARM64/AMD64)
+- ✅ Build the main toke binary with optimizations
+- ✅ Bundle llama-server for GGUF model support
+- ✅ Bundle MLX server (macOS ARM64 only - Apple Silicon optimized)
+- ✅ Download and include ngrok for web sharing
+- ✅ Create a self-contained package with all dependencies
+
+### Alternative Build Methods
+
+#### Using Make targets
+```bash
+# Build step by step
+make build               # Build main toke binary
+make build-llama-server  # Build llama.cpp server
+make build-mlx-server    # Build MLX server (macOS ARM64 only)
+
+# Or build everything
+make build-all          # Build for all platforms
+```
+
+#### Manual Go install
+```bash
+# Install just the main binary (no backends)
 go install github.com/chasedut/toke@latest
+```
+
+## Architecture & Components 🏗️
+
+Toke integrates multiple AI backends and tools:
+
+### Backend Support
+- **Llama Backend** (Port 11434): Runs GGUF models via llama.cpp for efficient inference
+- **MLX Backend** (Port 11435): Apple Silicon optimized, supports MLX models like GLM-4.5-Air
+- **Cloud Providers**: Claude, GPT, Gemini, and more via API
+
+### Web Sharing with Ngrok
+Press `Ctrl+I` in the app to instantly share your coding session via web interface. Ngrok creates a secure tunnel so your buddies can watch and collaborate in real-time.
+
+### Build Output Structure
+After building, you'll get a self-contained directory:
+```
+build/toke-<platform>/
+├── toke                    # Main application
+├── ngrok                   # Web sharing tool
+├── backends/
+│   ├── llama-server       # GGUF model support
+│   └── mlx-server         # MLX support (macOS ARM64 only)
+└── README.md              # Quick reference
 ```
 
 ## Getting Started 💨
