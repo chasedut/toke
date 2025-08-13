@@ -14,6 +14,7 @@ import (
 	"github.com/chasedut/toke/internal/tui/components/chat"
 	"github.com/chasedut/toke/internal/tui/components/core"
 	"github.com/chasedut/toke/internal/tui/components/dialogs"
+	"github.com/chasedut/toke/internal/tui/components/dialogs/imageprompt"
 	"github.com/chasedut/toke/internal/tui/exp/list"
 	"github.com/chasedut/toke/internal/tui/styles"
 	"github.com/chasedut/toke/internal/tui/util"
@@ -429,6 +430,16 @@ func (c *commandDialogCmp) defaultCommands() []Command {
 			Description: "Toggle help",
 			Handler: func(cmd Command) tea.Cmd {
 				return util.CmdHandler(ToggleHelpMsg{})
+			},
+		},
+		{
+			ID:          "imagine_new_image",
+			Title:       "Imagine New Image",
+			Description: "Generate an image based on your prompt",
+			Handler: func(cmd Command) tea.Cmd {
+				return util.CmdHandler(dialogs.OpenDialogMsg{
+					Model: imageprompt.NewImagePromptDialog(),
+				})
 			},
 		},
 		{
