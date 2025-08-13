@@ -377,7 +377,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errorMsg = fmt.Sprintf("Hugging Face error: %v", msg.Error)
 		m.hfLoading = false
 		return m, nil
-		
 	}
 	
 	return m, nil
@@ -414,9 +413,7 @@ func (m Model) handleDownloadingKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		downloadProgress.err = fmt.Errorf("download cancelled by user")
 		downloadProgress.done = true // Mark as done with error
 		// Clear the download from background manager if present
-		if m.selectedModel != nil {
-			// Note: we'll need to handle this in the main TUI
-		}
+		// Note: we'll need to handle this in the main TUI when m.selectedModel != nil
 		return m, util.CmdHandler(dialogs.CloseDialogMsg{})
 	}
 	return m, nil

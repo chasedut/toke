@@ -14,6 +14,7 @@
 
 Toke is an AI-powered coding assistant with serious weed culture vibes. Fork of Crush, but way more chill.
 
+- **Desktop & CLI:** Native Tauri desktop app or terminal interface - your choice
 - **Multi-Model Support:** Choose your strain - Claude Kush, GPT OG, or whatever hits right
 - **MLX Support (v0.4202+):** Apple Silicon optimized with GLM-4.5-Air models for that smooth performance
 - **Session-Based:** Keep your coding sessions organized like a proper stash box
@@ -24,9 +25,24 @@ Toke is an AI-powered coding assistant with serious weed culture vibes. Fork of 
 
 ## Installation 🌿
 
-### Quick Build (Recommended) 🚀
+### Desktop App (Tauri) 🖥️
 
-The easiest way to build toke with all backends (llama, MLX, ngrok):
+Get the native desktop experience with our Tauri app:
+
+```bash
+# Build the desktop app
+./scripts/build-tauri-app.sh
+
+# Find your app at:
+# macOS: toke-tauri/src-tauri/target/release/bundle/macos/Toke.app
+# DMG: toke-tauri/src-tauri/target/release/bundle/dmg/Toke_0.1.0_aarch64.dmg
+```
+
+Or download pre-built releases from the [releases page](https://github.com/chasedut/toke/releases).
+
+### Quick Build (CLI) 🚀
+
+The easiest way to build toke CLI with all backends (llama, MLX, ngrok):
 
 ```bash
 # Clone the repository
@@ -140,6 +156,27 @@ Built specifically for weed tech:
 - Delivery route optimization
 - Lab test data parsing
 - Loyalty program templates
+
+## Development 🛠️
+
+### Linting
+
+Toke uses `golangci-lint` for code quality. The configuration is in `.golangci.yml` with several linters enabled including:
+- `staticcheck` - Go static analysis
+- `misspell` - Spell checking
+- `bodyclose` - Ensures HTTP response bodies are closed
+- `rowserrcheck` - Checks row.Err is checked
+- And more...
+
+```bash
+# Run the linter
+make lint
+
+# Install golangci-lint if needed
+brew install golangci-lint
+# or
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+```
 
 ## Contributing 🤝
 

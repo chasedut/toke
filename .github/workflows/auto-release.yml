@@ -1,0 +1,140 @@
+name: Auto Release on PR Merge
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+jobs:
+  create-release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Get PR labels
+        id: pr-labels
+        run: |
+          echo "labels=${{ join(github.event.pull_request.labels.*.name, ',') }}" >> $GITHUB_OUTPUT
+      
+      - name: Determine version bump type
+        id: bump-type
+        run: |
+          labels="${{ steps.pr-labels.outputs.labels }}"
+          if [[ "$labels" == *"major"* ]]; then
+            echo "type=major" >> $GITHUB_OUTPUT
+          elif [[ "$labels" == *"minor"* ]]; then
+            echo "type=minor" >> $GITHUB_OUTPUT
+          else
+            echo "type=patch" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Get current version
+        id: current-version
+        run: |
+          VERSION=$(cat VERSION)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Calculate new version
+        id: new-version
+        run: |
+          current="${{ steps.current-version.outputs.version }}"
+          bump_type="${{ steps.bump-type.outputs.type }}"
+          
+          # Parse current version
+          IFS='.' read -r major minor patch <<< "$current"
+          
+          # Bump version based on type
+          if [[ "$bump_type" == "major" ]]; then
+            major=$((major + 1))
+            minor=0
+            patch=0
+          elif [[ "$bump_type" == "minor" ]]; then
+            minor=$((minor + 1))
+            patch=0
+          else
+            patch=$((patch + 1))
+          fi
+          
+          new_version="${major}.${minor}.${patch}"
+          echo "version=$new_version" >> $GITHUB_OUTPUT
+      
+      - name: Update VERSION file
+        run: |
+          echo "${{ steps.new-version.outputs.version }}" > VERSION
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add VERSION
+          git commit -m "chore: bump version to ${{ steps.new-version.outputs.version }}"
+          git push
+      
+      - name: Create and push tag
+        run: |
+          git tag "v${{ steps.new-version.outputs.version }}"
+          git push origin "v${{ steps.new-version.outputs.version }}"
+      
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          # Get PR body
+          PR_BODY=$(cat << 'EOF'
+          ${{ github.event.pull_request.body }}
+          EOF
+          )
+          
+          # Get commit messages from PR
+          COMMITS=$(git log --pretty=format:"- %s" HEAD~${{ github.event.pull_request.commits }}..HEAD)
+          
+          # Format release notes
+          cat << EOF > release-notes.md
+          ## 🚀 Release v${{ steps.new-version.outputs.version }}
+          
+          ### Pull Request: #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}
+          
+          **Author:** @${{ github.event.pull_request.user.login }}
+          **Merged:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          
+          ### Changes
+          $COMMITS
+          
+          ### Description
+          $PR_BODY
+          
+          ---
+          *This release was automatically generated from PR #${{ github.event.pull_request.number }}*
+          EOF
+          
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          cat release-notes.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Wait for build workflow
+        uses: fountainhead/action-wait-for-check@v1.2.0
+        id: wait-for-build
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          checkName: build
+          ref: v${{ steps.new-version.outputs.version }}
+          timeoutSeconds: 1800
+      
+      - name: Create GitHub Release
+        if: steps.wait-for-build.outputs.conclusion == 'success'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.new-version.outputs.version }}
+          name: Toke v${{ steps.new-version.outputs.version }}
+          body: ${{ steps.release-notes.outputs.notes }}
+          draft: false
+          prerelease: false
+          generate_release_notes: false

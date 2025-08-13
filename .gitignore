@@ -37,6 +37,7 @@ Thumbs.db
 # Binary output directory
 /bin/
 /dist/
+/build/
 
 # Local environment variables
 .env
@@ -45,7 +46,20 @@ Thumbs.db
 **/.toke/**
 
 /toke
+build/Toke.app/
 
 manpages/
 completions/
 !internal/tui/components/completions/
+
+# Tauri directories
+toke-tauri/node_modules/
+toke-tauri/dist/
+toke-tauri/src-tauri/target/
+toke-tauri/src-tauri/gen/
+
+# Build artifacts from scripts
+build-llama-server/
+build-mlx-server/
+build-ngrok/
+

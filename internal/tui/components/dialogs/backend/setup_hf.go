@@ -311,9 +311,7 @@ func (m Model) renderHFFileSelect() string {
 		return s.String()
 	}
 	
-	// Update files list to only show relevant ones
-	m.hfFiles = relevantFiles
-	
+	// Display only relevant files
 	for i, file := range relevantFiles {
 		if i > 10 { // Limit display
 			break

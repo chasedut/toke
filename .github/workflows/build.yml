@@ -16,15 +16,15 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.22'
+        go-version: '1.24'
     
     - name: Run tests
       run: go test -v ./...
     
     - name: Run linter
-      uses: golangci/golangci-lint-action@v3
+      uses: golangci/golangci-lint-action@v6
       with:
-        version: latest
+        version: v1.64.3
 
   build:
     needs: test
@@ -40,10 +40,6 @@ jobs:
             goos: darwin
             goarch: amd64
             suffix: -darwin-amd64
-          - os: ubuntu-latest
-            goos: linux
-            goarch: amd64
-            suffix: -linux-amd64
           - os: windows-latest
             goos: windows
             goarch: amd64
@@ -55,7 +51,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.22'
+        go-version: '1.24'
     
     - name: Build
       env:
@@ -91,9 +87,140 @@ jobs:
         name: mlx-server-darwin-arm64
         path: build-mlx-server/mlx-server-darwin-arm64.tar.gz
 
+  test-llama-server:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-14  # M1 runner
+            arch: arm64
+            cmake_args: -DLLAMA_METAL=ON
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Clone llama.cpp
+      uses: actions/checkout@v4
+      with:
+        repository: ggerganov/llama.cpp
+        path: llama.cpp
+        submodules: recursive
+    
+    - name: Setup build environment (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install cmake
+    
+    
+    - name: Build llama-server
+      run: |
+        cd llama.cpp
+        mkdir build
+        cd build
+        cmake .. ${{ matrix.cmake_args }} -DLLAMA_SERVER_SSL=OFF
+        cmake --build . --config Release --target llama-server
+    
+    - name: Test llama-server binary
+      run: |
+        if [ -f llama.cpp/build/bin/llama-server ]; then
+          llama.cpp/build/bin/llama-server --help
+          echo "✅ llama-server built successfully"
+        else
+          echo "❌ llama-server build failed"
+          exit 1
+        fi
+
+  test-tauri-app:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-14  # M1 runner
+            target: aarch64-apple-darwin
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.os == 'macos-14' && 'aarch64-apple-darwin' || '' }}
+    
+    
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+    
+    - name: Build toke binary for Tauri
+      run: |
+        go build -o build/toke-${{ runner.os }}-${{ runner.arch }}/toke .
+    
+    - name: Install Tauri dependencies
+      working-directory: ./toke-tauri
+      run: npm install
+    
+    - name: Test Tauri build
+      working-directory: ./toke-tauri
+      run: |
+        npm run build
+        echo "✅ Tauri app built successfully"
+
+  test-ngrok-integration:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-14]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Test ngrok download and setup
+      run: |
+        mkdir -p build-ngrok
+        cd build-ngrok
+        
+        # Determine platform
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m)
+        
+        if [ "$ARCH" = "x86_64" ]; then
+            ARCH="amd64"
+        elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+            ARCH="arm64"
+        fi
+        
+        # Download ngrok
+        if [ "$OS" = "darwin" ]; then
+            if [ "$ARCH" = "arm64" ]; then
+                curl -L -o ngrok.zip "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-darwin-arm64.zip"
+            else
+                curl -L -o ngrok.zip "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-darwin-amd64.zip"
+            fi
+            unzip -q ngrok.zip
+        elif [ "$OS" = "linux" ]; then
+            if [ "$ARCH" = "arm64" ]; then
+                curl -L -o ngrok.zip "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.zip"
+                unzip -q ngrok.zip
+            else
+                curl -L -o ngrok.tgz "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz"
+                tar -xzf ngrok.tgz
+            fi
+        fi
+        
+        # Test ngrok
+        chmod +x ngrok
+        ./ngrok version
+        echo "✅ ngrok downloaded and verified successfully"
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, build-mlx-server]
+    needs: [build, build-mlx-server, test-llama-server, test-tauri-app, test-ngrok-integration]
     runs-on: ubuntu-latest
     permissions:
       contents: write

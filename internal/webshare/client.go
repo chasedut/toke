@@ -2,6 +2,7 @@ package webshare
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -35,8 +36,9 @@ func (c *SSEClient) Start() {
 func (c *SSEClient) listen() {
 	fmt.Fprintf(os.Stderr, "[DEBUG] SSEClient: Starting connection to %s\n", c.url)
 	
-	// Create HTTP request
-	req, err := http.NewRequest("GET", c.url, nil)
+	// Create HTTP request with context
+	ctx := context.Background()
+	req, err := http.NewRequestWithContext(ctx, "GET", c.url, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[DEBUG] SSEClient: Failed to create request: %v\n", err)
 		return

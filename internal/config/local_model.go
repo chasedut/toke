@@ -29,7 +29,7 @@ func (c *Config) ConfigureLocalModel(model *backend.ModelOption) error {
 	localProvider := ProviderConfig{
 		ID:      "local",
 		Name:    "Local Model",
-		BaseURL: fmt.Sprintf("http://localhost:11434/v1"),
+		BaseURL: "http://localhost:11434/v1",
 		Type:    catwalk.TypeOpenAI, // llama.cpp serves OpenAI-compatible API
 		APIKey:  "", // No API key needed
 		Disable: false,

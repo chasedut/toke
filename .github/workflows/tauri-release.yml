@@ -1,0 +1,160 @@
+name: Tauri Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'toke-tauri/**'
+      - 'main.go'
+      - 'internal/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'VERSION'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  build-tauri:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
+          - platform: 'macos-latest'
+            args: '--target x86_64-apple-darwin'
+          - platform: 'windows-latest'
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Build toke binary
+        run: |
+          go build -o build/toke-${{ runner.os }}-${{ runner.arch }}/toke .
+
+      - name: Update Tauri version from VERSION file
+        run: |
+          VERSION=$(cat VERSION)
+          echo "Updating tauri.conf.json to version $VERSION"
+          
+          # Update version in tauri.conf.json
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" toke-tauri/src-tauri/tauri.conf.json
+          else
+            sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" toke-tauri/src-tauri/tauri.conf.json
+          fi
+          
+          echo "Updated tauri.conf.json:"
+          grep '"version"' toke-tauri/src-tauri/tauri.conf.json
+
+      - name: Install Tauri dependencies
+        working-directory: ./toke-tauri
+        run: npm install
+
+      - name: Build Tauri App
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: './toke-tauri'
+          args: ${{ matrix.args }}
+          includeUpdaterJSON: true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: toke-tauri-${{ matrix.platform }}
+          path: |
+            toke-tauri/src-tauri/target/release/bundle/dmg/*.dmg
+            toke-tauri/src-tauri/target/release/bundle/macos/*.app.tar.gz
+            toke-tauri/src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
+            toke-tauri/src-tauri/target/release/bundle/msi/*.msi
+            toke-tauri/src-tauri/target/release/bundle/msi/*.msi.zip
+            toke-tauri/src-tauri/target/release/bundle/msi/*.msi.zip.sig
+            toke-tauri/src-tauri/target/release/bundle/nsis/*.exe
+            toke-tauri/src-tauri/target/release/bundle/nsis/*.nsis.zip
+            toke-tauri/src-tauri/target/release/bundle/nsis/*.nsis.zip.sig
+
+  release:
+    needs: build-tauri
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from VERSION file
+        id: get_version
+        run: |
+          # Read version from VERSION file
+          VERSION=$(cat VERSION)
+          echo "Version from file: $VERSION"
+          
+          # Add 'v' prefix for tag
+          NEW_VERSION="v${VERSION}"
+          
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "Tag version: $NEW_VERSION"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          name: "Toke Desktop ${{ steps.get_version.outputs.version }}"
+          body: |
+            ## Toke Desktop Release
+            
+            **Version:** ${{ steps.get_version.outputs.version }}
+            **Commit:** ${{ github.sha }}
+            
+            ### Changes
+            ${{ github.event.head_commit.message }}
+            
+            ### Downloads
+            - **macOS**: Download the `.dmg` file for macOS
+            - **Windows**: Download the `.msi` or `.exe` installer
+          files: |
+            toke-tauri-*/**/*.dmg
+            toke-tauri-*/**/*.app.tar.gz
+            toke-tauri-*/**/*.app.tar.gz.sig
+            toke-tauri-*/**/*.msi
+            toke-tauri-*/**/*.msi.zip
+            toke-tauri-*/**/*.msi.zip.sig
+            toke-tauri-*/**/*.exe
+            toke-tauri-*/**/*.nsis.zip
+            toke-tauri-*/**/*.nsis.zip.sig
+            toke-tauri-*/**/latest.json
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

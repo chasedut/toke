@@ -348,7 +348,18 @@ func (s *SessionShare) startNgrok() error {
 		time.Sleep(time.Duration(500*(i+1)) * time.Millisecond)
 		
 		// Get ngrok URL from API
-		resp, err := http.Get("http://localhost:4040/api/tunnels")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		
+		req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:4040/api/tunnels", nil)
+		if err != nil {
+			if i == maxRetries-1 {
+				return fmt.Errorf("failed to create request for ngrok tunnels: %w", err)
+			}
+			continue // Retry
+		}
+		
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			if i == maxRetries-1 {
 				return fmt.Errorf("failed to get ngrok tunnels after %d retries: %w", maxRetries, err)
@@ -642,7 +653,7 @@ func (s *SessionShare) findNgrok() string {
 	exeDir := filepath.Dir(exePath)
 	
 	// Check locations in order of preference
-	locations := []string{}
+	var locations []string
 	
 	if runtime.GOOS == "windows" {
 		locations = []string{

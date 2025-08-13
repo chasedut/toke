@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/chasedut/toke/internal/app"
@@ -55,6 +56,31 @@ toke run "Explain the use of context in Go"
 toke -y
   `,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Check for updates on startup (blocking if update accepted)
+		if CheckForUpdateOnStartup(cmd.Context()) {
+			// If update was installed, restart the application
+			executable, err := os.Executable()
+			if err != nil {
+				return fmt.Errorf("failed to get executable path: %v", err)
+			}
+			
+			// Prepare the same arguments
+			newArgs := os.Args[1:] // Skip the first argument (the program name)
+			
+			// Execute the new version
+			execCmd := exec.Command(executable, newArgs...)
+			execCmd.Stdin = os.Stdin
+			execCmd.Stdout = os.Stdout
+			execCmd.Stderr = os.Stderr
+			
+			if err := execCmd.Start(); err != nil {
+				return fmt.Errorf("failed to restart with new version: %v", err)
+			}
+			
+			// Exit the current process
+			os.Exit(0)
+		}
+		
 		app, err := setupApp(cmd)
 		if err != nil {
 			return err

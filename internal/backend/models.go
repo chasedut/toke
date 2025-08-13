@@ -188,7 +188,7 @@ func AvailableModels() []ModelOption {
 	
 	// Set availability for all models
 	for i := range models {
-		if models[i].Available == false && models[i].Provider == "llamacpp" {
+		if !models[i].Available && models[i].Provider == "llamacpp" {
 			models[i].Available = true // GGUF models work everywhere
 		}
 	}

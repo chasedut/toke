@@ -134,10 +134,7 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 		localGroup.Items = append(localGroup.Items, localModelItem)
 		
 		// Mark if this is the currently selected model (but don't auto-focus)
-		if currentModel.Provider == "local" {
-			// Just for tracking, not for selection
-			// selectedItemID = localModelItem.ID()
-		}
+		// Just for tracking, not for selection when currentModel.Provider == "local"
 		
 		groups = append(groups, localGroup)
 	}
