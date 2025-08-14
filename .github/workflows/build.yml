@@ -65,6 +65,7 @@ jobs:
       with:
         name: toke${{ matrix.suffix }}
         path: toke${{ matrix.suffix }}
+        retention-days: 1
 
   build-mlx-server:
     runs-on: macos-14  # M1 runner for MLX
@@ -130,13 +131,17 @@ jobs:
           exit 1
         fi
 
-  test-tauri-app:
+  build-tauri-app:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
           - os: macos-14  # M1 runner
             target: aarch64-apple-darwin
+            arch: arm64
+          - os: macos-13  # Intel Mac
+            target: x86_64-apple-darwin
+            arch: amd64
     
     steps:
     - uses: actions/checkout@v4
@@ -149,8 +154,7 @@ jobs:
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
       with:
-        targets: ${{ matrix.os == 'macos-14' && 'aarch64-apple-darwin' || '' }}
-    
+        targets: ${{ matrix.target }}
     
     - name: Setup Go
       uses: actions/setup-go@v5
@@ -159,17 +163,39 @@ jobs:
     
     - name: Build toke binary for Tauri
       run: |
-        go build -o build/toke-${{ runner.os }}-${{ runner.arch }}/toke .
+        go build -o build/toke-darwin-${{ matrix.arch }}/toke .
+        echo "Built toke binary at build/toke-darwin-${{ matrix.arch }}/toke"
+    
+    - name: Get VERSION
+      id: get_version
+      run: |
+        VERSION=$(cat VERSION)
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+    
+    - name: Update Tauri version
+      run: |
+        sed -i '' "s/\"version\": \".*\"/\"version\": \"${{ steps.get_version.outputs.version }}\"/" toke-tauri/src-tauri/tauri.conf.json
+        echo "Updated tauri.conf.json to version ${{ steps.get_version.outputs.version }}"
     
     - name: Install Tauri dependencies
       working-directory: ./toke-tauri
       run: npm install
     
-    - name: Test Tauri build
-      working-directory: ./toke-tauri
-      run: |
-        npm run build
-        echo "✅ Tauri app built successfully"
+    - name: Build Tauri App with DMG
+      uses: tauri-apps/tauri-action@v0
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        projectPath: './toke-tauri'
+        args: --target ${{ matrix.target }}
+    
+    - name: Upload DMG artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: toke-dmg-${{ matrix.arch }}
+        path: |
+          toke-tauri/src-tauri/target/release/bundle/dmg/*.dmg
+          toke-tauri/src-tauri/target/release/bundle/macos/*.app.tar.gz
 
   test-ngrok-integration:
     runs-on: ${{ matrix.os }}
@@ -220,7 +246,7 @@ jobs:
 
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-    needs: [build, build-mlx-server, test-llama-server, test-tauri-app, test-ngrok-integration]
+    needs: [build, build-tauri-app, test-llama-server, test-ngrok-integration]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -239,16 +265,43 @@ jobs:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
     
+    - name: List downloaded artifacts
+      run: |
+        echo "Downloaded artifacts:"
+        ls -la
+        find . -name "*.dmg" -o -name "*.tar.gz" -o -name "*.exe" | head -20
+    
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ steps.version.outputs.version }}
-        name: "Release ${{ steps.version.outputs.version }}"
+        name: "Toke ${{ steps.version.outputs.version }}"
+        body: |
+          ## 🍃 Toke - Elevated AI
+          ### I remember my first toke 💨
+          
+          **Version:** ${{ steps.version.outputs.version }}
+          
+          ### Downloads
+          - **macOS App (Apple Silicon)**: `Toke_*_aarch64.dmg` 
+          - **macOS App (Intel)**: `Toke_*_x86_64.dmg`
+          - **macOS CLI (Apple Silicon)**: `toke-darwin-arm64`
+          - **macOS CLI (Intel)**: `toke-darwin-amd64`
+          - **Windows CLI**: `toke-windows-amd64.exe`
+          
+          ### Installation
+          - **macOS Desktop**: Download and open the .dmg file, drag Toke to Applications
+          - **CLI**: Download the binary for your platform and add to PATH
+          
+          Built by stoners, for all 🍃
         files: |
-          toke-*/*
-          mlx-server-*/*
+          toke-darwin-arm64/toke-darwin-arm64
+          toke-darwin-amd64/toke-darwin-amd64
+          toke-windows-amd64.exe/toke-windows-amd64.exe
+          toke-dmg-arm64/*.dmg
+          toke-dmg-amd64/*.dmg
         draft: false
         prerelease: false
-        generate_release_notes: true
+        generate_release_notes: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
