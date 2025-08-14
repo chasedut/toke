@@ -20,6 +20,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// termSize attempts to get the terminal size
+type terminalSize struct {
+	Width  int
+	Height int
+}
+
+func termSize() (terminalSize, error) {
+	if w, h, err := term.GetSize(os.Stdout.Fd()); err == nil {
+		return terminalSize{Width: w, Height: h}, nil
+	}
+	// Fallback to default size if we can't get terminal size
+	return terminalSize{Width: 80, Height: 24}, nil
+}
+
 func init() {
 	rootCmd.PersistentFlags().StringP("cwd", "c", "", "Current working directory")
 	rootCmd.PersistentFlags().BoolP("debug", "d", false, "Debug")
@@ -87,13 +101,17 @@ toke -y
 		}
 		defer app.Shutdown()
 
+		// Get terminal size for initial setup
+		size, _ := termSize()
+		
 		// Set up the TUI.
 		program := tea.NewProgram(
-			tui.New(app),
+			tui.NewWithSize(app, size.Width, size.Height),
 			tea.WithAltScreen(),
 			tea.WithContext(cmd.Context()),
 			tea.WithMouseCellMotion(),            // Use cell motion instead of all motion to reduce event flooding
 			tea.WithFilter(tui.MouseEventFilter), // Filter mouse events based on focus state
+			tea.WithWindowSize(size.Width, size.Height), // Set initial window size
 		)
 
 		go app.Subscribe(program)

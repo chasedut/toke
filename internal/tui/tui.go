@@ -102,6 +102,9 @@ type appModel struct {
 func (a *appModel) Init() tea.Cmd {
 	var cmds []tea.Cmd
 	
+	// Request initial terminal size immediately
+	cmds = append(cmds, func() tea.Msg { return tea.RequestWindowSize() })
+	
 	// Initialize dialog component (needed even during loading)
 	if a.dialog != nil {
 		cmd := a.dialog.Init()
@@ -162,10 +165,11 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if a.isLoading {
 		switch msg := msg.(type) {
 		case tea.WindowSizeMsg:
+			a.wWidth, a.wHeight = msg.Width, msg.Height
+			a.width, a.height = msg.Width, msg.Height-2 // Account for status bar
 			if a.loadingScreen != nil {
 				a.loadingScreen, _ = a.loadingScreen.Update(msg)
 			}
-			a.wWidth, a.wHeight = msg.Width, msg.Height
 			return a, nil
 			
 		case InitializationCompleteMsg:
@@ -749,21 +753,35 @@ func (a *appModel) View() tea.View {
 	t := styles.CurrentTheme()
 	view.BackgroundColor = t.BgBase
 	
+	// Don't render anything until we have proper dimensions
+	if a.wWidth == 0 || a.wHeight == 0 {
+		// Return empty view until we get window size
+		view.Layer = lipgloss.NewCanvas()
+		return view
+	}
+	
 	// Show loading screen if loading
 	if a.isLoading && a.loadingScreen != nil {
-		if ls, ok := a.loadingScreen.(*loading.LoadingScreen); ok {
-			layers := []*lipgloss.Layer{
-				lipgloss.NewLayer(ls.View()),
-			}
-			
-			// Add dialog layers if active (even during loading)
-			if a.dialog != nil && a.dialog.HasDialogs() {
-				layers = append(layers, a.dialog.GetLayers()...)
-			}
-			
-			view.Layer = lipgloss.NewCanvas(layers...)
-			return view
+		// Handle both types of loading screens
+		var loadingView string
+		switch ls := a.loadingScreen.(type) {
+		case *loading.LoadingScreen:
+			loadingView = ls.View()
+		case *loading.SimpleLoadingScreen:
+			loadingView = ls.View()
 		}
+		
+		layers := []*lipgloss.Layer{
+			lipgloss.NewLayer(loadingView),
+		}
+		
+		// Add dialog layers if active (even during loading)
+		if a.dialog != nil && a.dialog.HasDialogs() {
+			layers = append(layers, a.dialog.GetLayers()...)
+		}
+		
+		view.Layer = lipgloss.NewCanvas(layers...)
+		return view
 	}
 	
 	if a.wWidth < 25 || a.wHeight < 15 {
@@ -870,12 +888,22 @@ func (a *appModel) renderDownloadStatus() string {
 
 // New creates and initializes a new TUI application model.
 func New(app *app.App) tea.Model {
+	return NewWithSize(app, 80, 24) // Default size
+}
+
+// NewWithSize creates and initializes a new TUI application model with initial size.
+func NewWithSize(app *app.App, width, height int) tea.Model {
 	chatPage := chat.New(app)
 	keyMap := DefaultKeyMap()
 	keyMap.pageBindings = chatPage.Bindings()
 
 	// Initialize dialog component
 	dialogCmp := dialogs.NewDialogCmp()
+
+	// Create loading screen with initial size
+	loadingScreen := loading.NewSimple()
+	// Directly set the dimensions
+	loadingScreen.SetSize(width, height)
 
 	model := &appModel{
 		currentPage: chat.ChatPageID,
@@ -893,7 +921,13 @@ func New(app *app.App) tea.Model {
 		
 		// Start with loading screen
 		isLoading:     true,
-		loadingScreen: loading.NewSimple(),
+		loadingScreen: loadingScreen,
+		
+		// Initialize with provided dimensions
+		wWidth: width,
+		wHeight: height,
+		width: width,
+		height: height - 2, // Account for status bar
 		
 		// Background downloads
 		downloadManager: background.NewDownloadManager(),
@@ -928,9 +962,8 @@ func (a *appModel) checkShellShortcuts() tea.Cmd {
 
 // startInitialization starts the initialization process
 func (a *appModel) startInitialization() tea.Cmd {
-	return tea.Tick(300*time.Millisecond, func(t time.Time) tea.Msg {
-		// Simulate initialization time
-		// In a real scenario, you could do actual initialization here
+	return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+		// Brief loading screen to ensure smooth initialization
 		return InitializationCompleteMsg{}
 	})
 }

@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/v2/textinput"
@@ -182,10 +183,45 @@ func (m *HFBrowseCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				
 			case "enter":
 				if m.selectedIdx < len(m.hfModels) {
-					// Load files for selected model
-					m.selectedModel = &m.hfModels[m.selectedIdx]
-					m.loading = true
-					return m, m.loadModelFiles(m.hfModels[m.selectedIdx].ID)
+					model := m.hfModels[m.selectedIdx]
+					m.selectedModel = &model
+					
+					// Check if this is an MLX model - if so, download directly
+					if isMLXModel(model) {
+						// Create a model option for MLX download
+						modelOpt := &backend.ModelOption{
+							ID:          model.ID,
+							Name:        model.ID,
+							Description: fmt.Sprintf("MLX Model from HuggingFace: %s", model.ID),
+							URL:         fmt.Sprintf("https://huggingface.co/%s", model.ID),
+							Provider:    "mlx",
+							Available:   backend.IsAppleSilicon(),
+						}
+						
+						// Get data directory
+						dataDir := ".toke"
+						if cfg := config.Get(); cfg.Options != nil && cfg.Options.DataDirectory != "" {
+							dataDir = cfg.Options.DataDirectory
+						}
+						orchestrator := backend.NewOrchestrator(dataDir)
+						
+						// Create backend setup dialog in download mode
+						backendDialog := backendDlg.NewWithModel(
+							orchestrator,
+							modelOpt,
+							func(downloadedModel *backend.ModelOption) {
+								// Model downloaded successfully
+								slog.Info("MLX model downloaded", "model", downloadedModel.Name)
+							},
+						)
+						
+						// Switch to the download dialog
+						return m, util.CmdHandler(dialogs.OpenDialogMsg{Model: backendDialog})
+					} else {
+						// For non-MLX models, show file selection
+						m.loading = true
+						return m, m.loadModelFiles(model.ID)
+					}
 				}
 				
 			case "s", "/":
@@ -363,22 +399,21 @@ func (m *HFBrowseCmp) renderModelList() string {
 			}
 			
 			s.WriteString(cursor)
-			s.WriteString(itemStyle.Render(model.ID))
 			
-			// Show details for selected model
-			if i == m.selectedIdx {
-				detailStyle := lipgloss.NewStyle().
-					Foreground(m.theme.FgHalfMuted).
-					MarginLeft(4)
-				if model.Author != "" {
-					s.WriteString("\n")
-					s.WriteString(detailStyle.Render(fmt.Sprintf("Author: %s", model.Author)))
-				}
-				if model.Downloads > 0 {
-					s.WriteString("\n")
-					s.WriteString(detailStyle.Render(fmt.Sprintf("Downloads: %d", model.Downloads)))
-				}
+			// Format as "Model ID - Author (Downloads: X)" on same line
+			displayText := model.ID
+			var details []string
+			if model.Author != "" {
+				details = append(details, model.Author)
 			}
+			if model.Downloads > 0 {
+				details = append(details, fmt.Sprintf("%d downloads", model.Downloads))
+			}
+			if len(details) > 0 {
+				displayText = fmt.Sprintf("%s - %s", model.ID, strings.Join(details, ", "))
+			}
+			
+			s.WriteString(itemStyle.Render(displayText))
 			s.WriteString("\n")
 		}
 	}
@@ -476,6 +511,31 @@ func (m *HFBrowseCmp) renderFileSelect() string {
 
 func (m *HFBrowseCmp) ID() dialogs.DialogID {
 	return "hf_browse"
+}
+
+// isMLXModel checks if a HuggingFace model is an MLX model
+func isMLXModel(model backend.HuggingFaceModel) bool {
+	modelIDLower := strings.ToLower(model.ID)
+	
+	// Check if model ID contains mlx
+	if strings.Contains(modelIDLower, "mlx") {
+		return true
+	}
+	
+	// Check tags for mlx
+	for _, tag := range model.Tags {
+		if strings.ToLower(tag) == "mlx" {
+			return true
+		}
+	}
+	
+	// Check library name
+	if strings.ToLower(model.LibraryName) == "mlx" {
+		return true
+	}
+	
+	// If none of the above, assume it's not MLX (will show file picker)
+	return false
 }
 
 func (m *HFBrowseCmp) Position() (int, int) {

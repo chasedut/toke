@@ -309,16 +309,16 @@ func (c *commandDialogCmp) defaultCommands() []Command {
 		},
 		{
 			ID:          "switch_model",
-			Title:       "Switch Model",
-			Description: "Switch to a different model",
+			Title:       "Choose Cloud Model",
+			Description: "Configure API providers and switch cloud models",
 			Handler: func(cmd Command) tea.Cmd {
 				return util.CmdHandler(SwitchModelMsg{})
 			},
 		},
 		{
 			ID:          "add_new_models",
-			Title:       "New Model",
-			Description: "Download local models or configure API providers",
+			Title:       "Choose Local Model",
+			Description: "Download and use local models",
 			Handler: func(cmd Command) tea.Cmd {
 				return util.CmdHandler(AddNewModelsMsg{})
 			},
