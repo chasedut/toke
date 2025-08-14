@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	question                      = "Are you sure you want to quit?"
+	question                      = "What would you like to do?"
 	QuitDialogID dialogs.DialogID = "quit"
 )
 
@@ -23,15 +23,15 @@ type quitDialogCmp struct {
 	wWidth  int
 	wHeight int
 
-	selectedNo bool // true if "No" button is selected
-	keymap     KeyMap
+	selectedOption int // 0: Quit, 1: Show Terminal, 2: Cancel
+	keymap         KeyMap
 }
 
 // NewQuitDialog creates a new quit confirmation dialog.
 func NewQuitDialog() QuitDialog {
 	return &quitDialogCmp{
-		selectedNo: true, // Default to "No" for safety
-		keymap:     DefaultKeymap(),
+		selectedOption: 0, // Default to "Quit"
+		keymap:         DefaultKeymap(),
 	}
 }
 
@@ -48,13 +48,22 @@ func (q *quitDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, q.keymap.LeftRight, q.keymap.Tab):
-			q.selectedNo = !q.selectedNo
+			// Cycle through options: 0 -> 1 -> 2 -> 0
+			q.selectedOption = (q.selectedOption + 1) % 3
 			return q, nil
 		case key.Matches(msg, q.keymap.EnterSpace):
-			if !q.selectedNo {
+			switch q.selectedOption {
+			case 0: // Quit
 				return q, tea.Quit
+			case 1: // Show Terminal
+				// Send a command to exit toke but keep terminal open
+				return q, tea.Sequence(
+					util.CmdHandler(dialogs.CloseDialogMsg{}),
+					tea.Quit,
+				)
+			case 2: // Cancel
+				return q, util.CmdHandler(dialogs.CloseDialogMsg{})
 			}
-			return q, util.CmdHandler(dialogs.CloseDialogMsg{})
 		case key.Matches(msg, q.keymap.Yes):
 			return q, tea.Quit
 		case key.Matches(msg, q.keymap.No, q.keymap.Close):
@@ -64,27 +73,34 @@ func (q *quitDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return q, nil
 }
 
-// View renders the quit dialog with Yes/No buttons.
+// View renders the quit dialog with three option buttons.
 func (q *quitDialogCmp) View() string {
 	t := styles.CurrentTheme()
 	baseStyle := t.S().Base
-	yesStyle := t.S().Text
-	noStyle := yesStyle
+	buttonStyle := t.S().Text
 
-	if q.selectedNo {
-		noStyle = noStyle.Foreground(t.White).Background(t.Secondary)
-		yesStyle = yesStyle.Background(t.BgSubtle)
-	} else {
-		yesStyle = yesStyle.Foreground(t.White).Background(t.Secondary)
-		noStyle = noStyle.Background(t.BgSubtle)
+	// Create styles for each button
+	quitStyle := buttonStyle.Background(t.BgSubtle)
+	terminalStyle := buttonStyle.Background(t.BgSubtle)
+	cancelStyle := buttonStyle.Background(t.BgSubtle)
+
+	// Highlight the selected option
+	switch q.selectedOption {
+	case 0:
+		quitStyle = quitStyle.Foreground(t.White).Background(t.Secondary)
+	case 1:
+		terminalStyle = terminalStyle.Foreground(t.White).Background(t.Secondary)
+	case 2:
+		cancelStyle = cancelStyle.Foreground(t.White).Background(t.Secondary)
 	}
 
-	const horizontalPadding = 3
-	yesButton := yesStyle.Padding(0, horizontalPadding).Render("Yep!")
-	noButton := noStyle.Padding(0, horizontalPadding).Render("Nope")
+	const horizontalPadding = 2
+	quitButton := quitStyle.Padding(0, horizontalPadding).Render("Quit")
+	terminalButton := terminalStyle.Padding(0, horizontalPadding).Render("Show Terminal")
+	cancelButton := cancelStyle.Padding(0, horizontalPadding).Render("Cancel")
 
-	buttons := baseStyle.Width(lipgloss.Width(question)).Align(lipgloss.Right).Render(
-		lipgloss.JoinHorizontal(lipgloss.Center, yesButton, "  ", noButton),
+	buttons := baseStyle.Align(lipgloss.Center).Render(
+		lipgloss.JoinHorizontal(lipgloss.Center, quitButton, " ", terminalButton, " ", cancelButton),
 	)
 
 	content := baseStyle.Render(
@@ -108,7 +124,8 @@ func (q *quitDialogCmp) Position() (int, int) {
 	row := q.wHeight / 2
 	row -= 7 / 2
 	col := q.wWidth / 2
-	col -= (lipgloss.Width(question) + 4) / 2
+	// Adjust for wider dialog with three buttons
+	col -= 35 / 2
 
 	return row, col
 }

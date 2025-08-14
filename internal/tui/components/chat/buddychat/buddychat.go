@@ -179,9 +179,8 @@ func (b *BuddyChatComponent) View() string {
 			} else {
 				msgStyle = msgStyle.Foreground(t.Secondary)
 			}
-			
-			messagesContent.WriteString(fmt.Sprintf("[%s] %s: %s\n", 
-				timeStr, msg.FromName, msg.Message))
+			messagesContent.WriteString(msgStyle.Render(fmt.Sprintf("[%s] %s: %s\n", 
+				timeStr, msg.FromName, msg.Message)))
 		}
 	}
 	

@@ -18,7 +18,7 @@ import (
 
 const (
 	ImagePromptDialogID dialogs.DialogID = "imageprompt"
-	defaultWidth                          = 60
+	defaultWidth        int              = 60
 )
 
 type ImagePromptDialog interface {
@@ -293,11 +293,8 @@ func (d *imagePromptDialogCmp) openImage() tea.Cmd {
 		}
 		
 		if cmd != nil {
-			err := cmd.Run()
-			if err != nil {
-				// If opening fails, try to show the error somehow
-				// For now, we'll just ignore it
-			}
+			// Run the command, ignoring any errors
+			_ = cmd.Run()
 		}
 		return nil
 	})

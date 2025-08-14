@@ -7,8 +7,22 @@
       "WebFetch(domain:huggingface.co)",
       "Bash(grep:*)",
       "Bash(rm:*)",
-      "Bash(./ngrok config check)"
+      "Bash(./ngrok config check)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(killall:*)",
+      "Bash(open:*)",
+      "Bash(./build/Toke.app/Contents/MacOS/toke:*)",
+      "Bash(timeout:*)",
+      "Bash(true)",
+      "Bash(log show:*)",
+      "Bash(swift build:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(go:*)",
+      "Bash(npm install:*)",
+      "Bash(gh secret set:*)"
     ],
-    "deny": []
+    "deny": [],
+    "defaultMode": "acceptEdits"
   }
 }

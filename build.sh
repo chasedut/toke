@@ -151,11 +151,25 @@ if [ "$1" = "--archive" ] || [ "$1" = "-a" ]; then
     echo -e "${GREEN}Archive created: build/toke-${PLATFORM}.tar.gz${NC}"
 fi
 
+# Create macOS app bundle
+if [ "$1" = "--app" ] || [ "$2" = "--app" ]; then
+    if [ "$OS" = "darwin" ]; then
+        echo -e "${GREEN}Creating macOS app bundle...${NC}"
+        ./scripts/build-app-bundle.sh
+    else
+        echo -e "${YELLOW}App bundle is only supported on macOS${NC}"
+    fi
+fi
+
 # Summary
 echo -e "\n${GREEN}Build complete!${NC}"
 echo -e "Binary location: ${YELLOW}build/toke-${PLATFORM}/${NC}"
 echo -e "\nTo run Toke:"
 echo -e "  ${YELLOW}cd build/toke-${PLATFORM}${NC}"
 echo -e "  ${YELLOW}./toke${NC}"
-echo -e "\nTo create an archive, run:"
-echo -e "  ${YELLOW}./build.sh --archive${NC}"
+echo -e "\nOptions:"
+echo -e "  ${YELLOW}./build.sh --archive${NC}  # Create tar.gz archive"
+if [ "$OS" = "darwin" ]; then
+    echo -e "  ${YELLOW}./build.sh --app${NC}      # Create macOS app bundle"
+    echo -e "  ${YELLOW}./build.sh --archive --app${NC}  # Create both"
+fi

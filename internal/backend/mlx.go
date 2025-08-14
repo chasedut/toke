@@ -283,7 +283,15 @@ func (b *MLXBackend) IsRunning() bool {
 	}
 	
 	// Check health endpoint
-	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/health", b.port))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://localhost:%d/health", b.port), nil)
+	if err != nil {
+		return false
+	}
+	
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return false
 	}

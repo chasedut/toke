@@ -2,9 +2,12 @@ module github.com/chasedut/toke
 
 go 1.24.3
 
+toolchain go1.24.6
+
 require (
 	github.com/JohannesKaufmann/html-to-markdown v1.6.0
 	github.com/MakeNowJust/heredoc v1.0.0
+	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/alecthomas/chroma/v2 v2.20.0
 	github.com/anthropics/anthropic-sdk-go v1.6.2
@@ -22,7 +25,9 @@ require (
 	github.com/charmbracelet/x/ansi v0.10.1
 	github.com/charmbracelet/x/exp/charmtone v0.0.0-20250708181618-a60a724ba6c3
 	github.com/charmbracelet/x/exp/golden v0.0.0-20250207160936-21c02780d27a
+	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be
 	github.com/disintegration/imageorient v0.0.0-20180920195336-8147d86e83ec
+	github.com/fatih/color v1.18.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/google/uuid v1.6.0
 	github.com/invopop/jsonschema v0.13.0
@@ -49,7 +54,7 @@ require (
 
 require (
 	github.com/charmbracelet/harmonica v0.2.0 // indirect
-	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
 )
 
 require (

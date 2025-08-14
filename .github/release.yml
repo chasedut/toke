@@ -1,0 +1,47 @@
+# GitHub Release Notes Configuration
+
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+      - skip-changelog
+    authors:
+      - dependabot
+      - github-actions
+  
+  categories:
+    - title: 🎉 New Features
+      labels:
+        - feature
+        - enhancement
+        - feat
+    
+    - title: 🐛 Bug Fixes
+      labels:
+        - bug
+        - fix
+        - bugfix
+    
+    - title: 🔧 Maintenance
+      labels:
+        - chore
+        - maintenance
+        - refactor
+    
+    - title: 📚 Documentation
+      labels:
+        - documentation
+        - docs
+    
+    - title: ⚡ Performance
+      labels:
+        - performance
+        - optimization
+    
+    - title: 🔒 Security
+      labels:
+        - security
+    
+    - title: Other Changes
+      labels:
+        - "*"
