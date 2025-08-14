@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"slices"
 	"strings"
 
@@ -78,15 +79,19 @@ type sidebarCmp struct {
 	webShareNgrokURL string
 	buddyCount      int
 	buddyNames      []string
+	gitBranch       string
 }
 
 func New(history history.Service, lspClients map[string]*lsp.Client, compact bool) Sidebar {
-	return &sidebarCmp{
+	s := &sidebarCmp{
 		lspClients:  lspClients,
 		history:     history,
 		compactMode: compact,
 		files:       csync.NewMap[string, SessionFile](),
 	}
+	// Get initial git branch
+	s.gitBranch = getGitBranch()
+	return s
 }
 
 func (m *sidebarCmp) Init() tea.Cmd {
@@ -136,6 +141,10 @@ func (m *sidebarCmp) View() string {
 			parts = append(parts,
 				logo.SmallRender(m.width-style.GetHorizontalFrameSize()),
 				"")
+		}
+		// Add git branch and backend info
+		if branchInfo := m.branchAndBackendBlock(); branchInfo != "" {
+			parts = append(parts, branchInfo, "")
 		}
 	}
 
@@ -278,6 +287,8 @@ func (m *sidebarCmp) SetSize(width, height int) tea.Cmd {
 	m.cwd = cwd()
 	m.width = width
 	m.height = height
+	// Update git branch on resize (in case it changed)
+	m.gitBranch = getGitBranch()
 	return nil
 }
 
@@ -720,6 +731,68 @@ func (m *sidebarCmp) SetWebShareURLs(localURL, ngrokURL string) {
 func (m *sidebarCmp) SetBuddyInfo(count int, names []string) {
 	m.buddyCount = count
 	m.buddyNames = names
+}
+
+func (m *sidebarCmp) branchAndBackendBlock() string {
+	t := styles.CurrentTheme()
+	parts := []string{}
+	
+	// Git branch
+	if m.gitBranch != "" {
+		branchIcon := t.S().Base.Foreground(t.FgSubtle).Render("⎇")
+		branchName := t.S().Base.Foreground(t.FgMuted).Render(m.gitBranch)
+		parts = append(parts, fmt.Sprintf("%s %s", branchIcon, branchName))
+	}
+	
+	// Backend info
+	cfg := config.Get()
+	agentCfg := cfg.Agents["coder"]
+	modelProvider := cfg.GetProviderForModel(agentCfg.Model)
+	
+	if modelProvider != nil {
+		backendInfo := ""
+		// Check if it's a local MLX backend (always on port 11435)
+		if modelProvider.BaseURL != "" && (strings.Contains(modelProvider.BaseURL, "localhost:") || strings.Contains(modelProvider.BaseURL, "127.0.0.1:")) {
+			// For local backends, always show MLX on port 11435
+			backendIcon := t.S().Base.Foreground(t.FgSubtle).Render("⚡")
+			backendInfo = t.S().Base.Foreground(t.FgMuted).Render("MLX:11435")
+			parts = append(parts, fmt.Sprintf("%s %s", backendIcon, backendInfo))
+		} else if modelProvider.BaseURL != "" && !strings.Contains(modelProvider.BaseURL, "api.openai.com") && 
+		   !strings.Contains(modelProvider.BaseURL, "api.anthropic.com") {
+			// Show provider name for custom remote backends
+			backendIcon := t.S().Base.Foreground(t.FgSubtle).Render("☁")
+			backendInfo = t.S().Base.Foreground(t.FgMuted).Render(modelProvider.Name)
+			parts = append(parts, fmt.Sprintf("%s %s", backendIcon, backendInfo))
+		} else {
+			// Standard providers (OpenAI, Anthropic, etc)
+			backendIcon := t.S().Base.Foreground(t.FgSubtle).Render("☁")
+			backendInfo = t.S().Base.Foreground(t.FgMuted).Render(modelProvider.Name)
+			parts = append(parts, fmt.Sprintf("%s %s", backendIcon, backendInfo))
+		}
+	}
+	
+	if len(parts) == 0 {
+		return ""
+	}
+	
+	dot := t.S().Subtle.Render(" • ")
+	return strings.Join(parts, dot)
+}
+
+func getGitBranch() string {
+	cmd := exec.Command("git", "branch", "--show-current")
+	cmd.Dir = config.Get().WorkingDir()
+	output, err := cmd.Output()
+	if err != nil {
+		// Try alternative method
+		cmd = exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+		cmd.Dir = config.Get().WorkingDir()
+		output, err = cmd.Output()
+		if err != nil {
+			return ""
+		}
+	}
+	return strings.TrimSpace(string(output))
 }
 
 func cwd() string {

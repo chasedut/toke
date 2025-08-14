@@ -128,11 +128,19 @@ def load_model(model_path: str, trust_remote_code: bool = False):
     
     # Load with appropriate settings for different quantization types
     # MLX automatically handles 3-bit, 4-bit, 8-bit, and 16-bit models
-    model, tokenizer = load(
-        model_path, 
-        lazy=True,  # Use lazy loading for large models
-        trust_remote_code=trust_remote_code
-    )
+    # Some versions of mlx_lm.load() don't accept trust_remote_code.
+    # Prefer passing it, but gracefully fall back if unsupported.
+    try:
+        model, tokenizer = load(
+            model_path,
+            lazy=True,
+            trust_remote_code=trust_remote_code,
+        )
+    except TypeError:
+        model, tokenizer = load(
+            model_path,
+            lazy=True,
+        )
     
     # Set model ID from path
     model_id = Path(model_path).name

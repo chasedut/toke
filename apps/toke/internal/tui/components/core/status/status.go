@@ -5,16 +5,19 @@ import (
 
 	"github.com/charmbracelet/bubbles/v2/help"
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/chasedut/toke/internal/tui/styles"
-	"github.com/chasedut/toke/internal/tui/util"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/chasedut/toke/internal/tui/styles"
+	"github.com/chasedut/toke/internal/tui/util"
 )
 
 type StatusCmp interface {
 	util.Model
 	ToggleFullHelp()
 	SetKeyMap(keyMap help.KeyMap)
+	// RenderedHeight returns the number of terminal rows the status/help will
+	// consume given the current width and key map.
+	RenderedHeight() int
 }
 
 type statusCmp struct {
@@ -70,6 +73,19 @@ func (m *statusCmp) View() string {
 		status = m.infoMsg()
 	}
 	return status
+}
+
+// RenderedHeight returns the height of the rendered status/help in rows.
+func (m *statusCmp) RenderedHeight() int {
+	// If keyMap hasn't been set yet, nothing will be shown
+	if m.keyMap == nil {
+		return 0
+	}
+	rendered := m.View()
+	if rendered == "" {
+		return 0
+	}
+	return lipgloss.Height(rendered)
 }
 
 func (m *statusCmp) infoMsg() string {

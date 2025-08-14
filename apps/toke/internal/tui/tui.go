@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/v2/key"
 	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/chasedut/toke/internal/app"
 	"github.com/chasedut/toke/internal/config"
 	"github.com/chasedut/toke/internal/llm/agent"
@@ -30,11 +31,11 @@ import (
 	"github.com/chasedut/toke/internal/tui/components/dialogs/compact"
 	"github.com/chasedut/toke/internal/tui/components/dialogs/filepicker"
 	"github.com/chasedut/toke/internal/tui/components/dialogs/models"
+	"github.com/chasedut/toke/internal/tui/components/dialogs/ngrokauth"
 	"github.com/chasedut/toke/internal/tui/components/dialogs/permissions"
 	"github.com/chasedut/toke/internal/tui/components/dialogs/quit"
 	"github.com/chasedut/toke/internal/tui/components/dialogs/sessions"
 	shellDlg "github.com/chasedut/toke/internal/tui/components/dialogs/shell"
-	"github.com/chasedut/toke/internal/tui/components/dialogs/ngrokauth"
 	webshareDialog "github.com/chasedut/toke/internal/tui/components/dialogs/webshare"
 	"github.com/chasedut/toke/internal/tui/loading"
 	"github.com/chasedut/toke/internal/tui/page"
@@ -42,7 +43,6 @@ import (
 	"github.com/chasedut/toke/internal/tui/styles"
 	"github.com/chasedut/toke/internal/tui/util"
 	"github.com/chasedut/toke/internal/webshare"
-	"github.com/charmbracelet/lipgloss/v2"
 )
 
 var lastMouseEvent time.Time
@@ -89,17 +89,17 @@ type appModel struct {
 
 	// Chat Page Specific
 	selectedSessionID string // The ID of the currently selected session
-	
+
 	// Shell shortcut check
 	hasCheckedShortcut bool
-	
+
 	// Loading state
-	isLoading      bool
-	loadingScreen  tea.Model
-	
+	isLoading     bool
+	loadingScreen tea.Model
+
 	// Background downloads
 	downloadManager *background.DownloadManager
-	
+
 	// Web sharing
 	webShare *webshare.SessionShare
 }
@@ -107,7 +107,7 @@ type appModel struct {
 // Init initializes the application model and returns initial commands.
 func (a *appModel) Init() tea.Cmd {
 	var cmds []tea.Cmd
-	
+
 	// Request initial terminal size immediately
 	cmds = append(cmds, func() tea.Msg { return tea.RequestWindowSize() })
 	// Request again after a small delay to ensure we get the correct size
@@ -115,7 +115,7 @@ func (a *appModel) Init() tea.Cmd {
 	cmds = append(cmds, tea.Tick(10*time.Millisecond, func(t time.Time) tea.Msg {
 		return tea.RequestWindowSize()
 	}))
-	
+
 	// Initialize dialog component (needed even during loading)
 	if a.dialog != nil {
 		cmd := a.dialog.Init()
@@ -123,7 +123,7 @@ func (a *appModel) Init() tea.Cmd {
 			cmds = append(cmds, cmd)
 		}
 	}
-	
+
 	// If loading, initialize the loading screen
 	if a.isLoading {
 		if a.loadingScreen != nil {
@@ -139,7 +139,7 @@ func (a *appModel) Init() tea.Cmd {
 		}
 		return tea.Batch(cmds...)
 	}
-	
+
 	// Normal initialization
 	if page, exists := a.pages[a.currentPage]; exists && page != nil {
 		cmd := page.Init()
@@ -157,7 +157,7 @@ func (a *appModel) Init() tea.Cmd {
 	}
 
 	cmds = append(cmds, tea.EnableMouseAllMotion)
-	
+
 	// Check for shell shortcuts immediately
 	shortcutCmd := a.checkShellShortcuts()
 	if shortcutCmd != nil {
@@ -176,7 +176,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if a.isLoading {
 		switch msg := msg.(type) {
 		case tea.WindowSizeMsg:
-			slog.Info("WindowSizeMsg during loading", 
+			slog.Info("WindowSizeMsg during loading",
 				"raw_width", msg.Width, "raw_height", msg.Height)
 			a.wWidth, a.wHeight = msg.Width, msg.Height
 			// During loading, don't subtract status bar height since loading screen doesn't have one
@@ -185,7 +185,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.loadingScreen, _ = a.loadingScreen.Update(msg)
 			}
 			return a, nil
-			
+
 		case InitializationCompleteMsg:
 			// Transition from loading to main app
 			slog.Info("InitializationCompleteMsg - transitioning from loading",
@@ -199,7 +199,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 				a.loadedPages[a.currentPage] = true
 			}
-			
+
 			// Initialize status if needed
 			if a.status != nil {
 				cmd := a.status.Init()
@@ -207,33 +207,41 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					cmds = append(cmds, cmd)
 				}
 			}
-			
-		// Apply initial window size if we have it
-		if a.wWidth > 0 && a.wHeight > 0 {
-			// Pre-adjust dimensions to avoid a single-frame overflow before the
-			// resize handler runs. This keeps shortcuts visible immediately.
-			statusHeight := 3
-			if a.showingFullHelp {
-				statusHeight = 6
+
+			// Ensure status has the current page keymap before first resize so
+			// RenderedHeight() reflects actual shortcuts/help height.
+			if page, exists := a.pages[a.currentPage]; exists && page != nil {
+				if withHelp, ok := page.(core.KeyMapHelp); ok {
+					a.status.SetKeyMap(withHelp.Help())
+				}
 			}
-			if a.downloadManager != nil && a.downloadManager.HasActiveDownloads() {
-				statusHeight++
+
+			// Apply initial window size if we have it
+			if a.wWidth > 0 && a.wHeight > 0 {
+				// Pre-adjust dimensions to avoid a single-frame overflow before the
+				// resize handler runs. This keeps shortcuts visible immediately.
+				statusHeight := 3
+				if a.showingFullHelp {
+					statusHeight = 6
+				}
+				if a.downloadManager != nil && a.downloadManager.HasActiveDownloads() {
+					statusHeight++
+				}
+				a.width = a.wWidth
+				a.height = max(0, a.wHeight-statusHeight)
+				slog.Info("Calling handleWindowResize after init",
+					"wWidth", a.wWidth, "wHeight", a.wHeight)
+				cmds = append(cmds, a.handleWindowResize(a.wWidth, a.wHeight))
+				// Force an immediate recalculation from the terminal to ensure all
+				// components receive a consistent WindowSizeMsg after init
+				cmds = append(cmds, func() tea.Msg { return tea.RequestWindowSize() })
 			}
-			a.width = a.wWidth
-			a.height = max(0, a.wHeight-statusHeight)
-			slog.Info("Calling handleWindowResize after init",
-				"wWidth", a.wWidth, "wHeight", a.wHeight)
-			cmds = append(cmds, a.handleWindowResize(a.wWidth, a.wHeight))
-			// Force an immediate recalculation from the terminal to ensure all
-			// components receive a consistent WindowSizeMsg after init
-			cmds = append(cmds, func() tea.Msg { return tea.RequestWindowSize() })
-		}
-			
+
 			cmds = append(cmds, tea.EnableMouseAllMotion)
 			cmds = append(cmds, a.checkShellShortcuts())
-			
+
 			return a, tea.Batch(cmds...)
-			
+
 		// Dialog messages should be handled even during loading
 		case dialogs.OpenDialogMsg, dialogs.CloseDialogMsg:
 			u, dialogCmd := a.dialog.Update(msg)
@@ -245,7 +253,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, tea.Batch(dialogCmd, loadingCmd)
 			}
 			return a, dialogCmd
-			
+
 		default:
 			// Update loading screen animation
 			if a.loadingScreen != nil {
@@ -256,7 +264,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	}
-	
+
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 	a.isConfigured = config.HasInitialDataConfig()
@@ -319,15 +327,15 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.selectedSessionID = msg.ID
 	case cmpChat.SessionClearedMsg:
 		a.selectedSessionID = ""
-	
+
 	// Buddy events from web share
 	case webshare.BuddyEventMsg:
 		// Forward to chat page
 		page, pageCmd := a.pages[a.currentPage].Update(msg)
 		a.pages[a.currentPage] = page.(util.Model)
-		
+
 		// SSE client is now started automatically in startWebShare
-		
+
 		return a, tea.Batch(append(cmds, pageCmd)...)
 	// Commands
 	case commands.SwitchSessionsMsg:
@@ -349,7 +357,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, util.CmdHandler(dialogs.OpenDialogMsg{
 			Model: models.NewLocalModelDialogCmp(),
 		})
-	
+
 	case backendDlg.MinimizeToBackgroundMsg:
 		// Add download to background manager
 		a.downloadManager.AddDownload(msg.Model, msg.Progress, msg.Downloaded, msg.Total)
@@ -365,7 +373,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				TTL:  5 * time.Second,
 			}),
 		)
-	
+
 	case backendDlg.DownloadProgressMsg:
 		// Forward to dialog if it's open (for modal progress updates)
 		if a.dialog.HasDialogs() {
@@ -374,7 +382,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, cmd
 		}
 		return a, nil
-	
+
 	case backendDlg.BackgroundDownloadProgressMsg:
 		// Update background download manager with progress
 		if a.downloadManager != nil && msg.Model != nil {
@@ -383,14 +391,14 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				progress = float64(msg.Downloaded) / float64(msg.Total)
 			}
 			a.downloadManager.UpdateProgress(msg.Model.ID, progress, msg.Downloaded, msg.Total)
-			
+
 			// Continue polling for background download progress
 			// The backend dialog's tickBackgroundDownload continues to send these messages
 			// We need to re-trigger it to keep the polling going
 			return a, backendDlg.ContinueBackgroundTicker(msg.Model)
 		}
 		return a, nil
-	
+
 	case backendDlg.DownloadCompleteMsg:
 		// Mark download as complete in manager
 		// Note: We need to track which model completed
@@ -403,7 +411,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		
+
 		// Forward to dialog if it's open
 		var cmds []tea.Cmd
 		if a.dialog.HasDialogs() {
@@ -411,14 +419,14 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.dialog = u.(dialogs.DialogCmp)
 			cmds = append(cmds, cmd)
 		}
-		
+
 		// Show notification that download is complete
 		cmds = append(cmds, util.CmdHandler(util.InfoMsg{
 			Type: util.InfoTypeInfo,
 			Msg:  "✅ Model download complete! Your new model is ready to use.",
 			TTL:  10 * time.Second,
 		}))
-		
+
 		return a, tea.Batch(cmds...)
 	// Compact
 	case commands.CompactMsg:
@@ -478,7 +486,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			modelTypeName = "small"
 		}
 		return a, util.ReportInfo(fmt.Sprintf("%s model changed to %s", modelTypeName, msg.Model.Model))
-	
+
 	// Launch local model setup
 	case models.LaunchLocalSetupMsg:
 		// Delay opening the dialog to ensure window is properly sized first
@@ -486,14 +494,14 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
 			return DelayedLaunchLocalSetupMsg{}
 		})
-	
+
 	// Launch local model setup with auto-selection of smallest model
 	case models.LaunchLocalSetupAutoMsg:
 		// Delay opening the dialog to ensure window is properly sized first
 		return a, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
 			return DelayedLaunchLocalSetupAutoMsg{}
 		})
-		
+
 	// Actually open the local model setup dialog after delay
 	case DelayedLaunchLocalSetupMsg:
 		// Use the new local models dialog
@@ -507,7 +515,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, util.CmdHandler(dialogs.OpenDialogMsg{
 			Model: dialog,
 		})
-	
+
 	// Open local model setup with auto-selection
 	case DelayedLaunchLocalSetupAutoMsg:
 		// Auto-select and immediately start downloading the smallest compatible model
@@ -584,7 +592,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.pages[a.currentPage] = updated.(util.Model)
 		cmds = append(cmds, pageCmd)
 		return a, tea.Batch(cmds...)
-	
+
 	case ShellShortcutCheckMsg:
 		// Only show dialog once per session and if needed
 		if msg.NeedsSetup && !a.hasCheckedShortcut && a.isConfigured {
@@ -638,14 +646,17 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handleWindowResize processes window resize events and updates all components.
 func (a *appModel) handleWindowResize(width, height int) tea.Cmd {
 	var cmds []tea.Cmd
-	// Reserve space for status bar (which includes padding)
-	// Status needs: help text (1-2 lines) + bottom padding (1 line) = 3 lines minimum
-	// During dialogs, shortcuts may wrap to 2 lines
+	// Reserve space for status/help using actual rendered height if possible.
+	// Default to 3 lines to account for help and bottom padding.
 	statusHeight := 3
-	if a.showingFullHelp {
-		statusHeight = 6 // Extra lines for full help
+	if a.status != nil {
+		if h, ok := any(a.status).(interface{ RenderedHeight() int }); ok {
+			if rh := h.RenderedHeight(); rh > 0 {
+				statusHeight = rh
+			}
+		}
 	}
-	// Reserve one line for background download status bar if present
+	// Also reserve one line for background download status bar if present
 	if a.downloadManager != nil && a.downloadManager.HasActiveDownloads() {
 		statusHeight++
 	}
@@ -691,7 +702,7 @@ func (a *appModel) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			return cmd
 		}
 	}
-	
+
 	// Check for 'b' key to toggle download modal (only when no dialog is open)
 	if msg.String() == "b" && !a.dialog.HasDialogs() && a.downloadManager != nil && a.downloadManager.HasActiveDownloads() {
 		// Get the first active download
@@ -703,7 +714,7 @@ func (a *appModel) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			})
 		}
 	}
-	
+
 	switch {
 	// help
 	case key.Matches(msg, a.keyMap.Help):
@@ -804,14 +815,14 @@ func (a *appModel) View() tea.View {
 	var view tea.View
 	t := styles.CurrentTheme()
 	view.BackgroundColor = t.BgBase
-	
+
 	// Don't render anything until we have proper dimensions
 	if a.wWidth == 0 || a.wHeight == 0 {
 		// Return empty view until we get window size
 		view.Layer = lipgloss.NewCanvas()
 		return view
 	}
-	
+
 	// Show loading screen if loading
 	if a.isLoading && a.loadingScreen != nil {
 		// Handle both types of loading screens
@@ -822,20 +833,20 @@ func (a *appModel) View() tea.View {
 		case *loading.SimpleLoadingScreen:
 			loadingView = ls.View()
 		}
-		
+
 		layers := []*lipgloss.Layer{
 			lipgloss.NewLayer(loadingView),
 		}
-		
+
 		// Add dialog layers if active (even during loading)
 		if a.dialog != nil && a.dialog.HasDialogs() {
 			layers = append(layers, a.dialog.GetLayers()...)
 		}
-		
+
 		view.Layer = lipgloss.NewCanvas(layers...)
 		return view
 	}
-	
+
 	if a.wWidth < 25 || a.wHeight < 15 {
 		view.Layer = lipgloss.NewCanvas(
 			lipgloss.NewLayer(
@@ -862,21 +873,21 @@ func (a *appModel) View() tea.View {
 	components := []string{
 		pageView,
 	}
-    // Add download status if there are active downloads
-    if a.downloadManager != nil && a.downloadManager.HasActiveDownloads() {
-        downloadStatus := a.renderDownloadStatus()
-        if downloadStatus != "" {
-            components = append(components, downloadStatus)
-        }
-    }
-	
+	// Add download status if there are active downloads
+	if a.downloadManager != nil && a.downloadManager.HasActiveDownloads() {
+		downloadStatus := a.renderDownloadStatus()
+		if downloadStatus != "" {
+			components = append(components, downloadStatus)
+		}
+	}
+
 	components = append(components, a.status.View())
 
-    // Constrain the appView height to the available space to prevent overflow
-    appView := styles.CurrentTheme().S().Base.
-        Width(a.width).
-        Height(a.height).
-        Render(lipgloss.JoinVertical(lipgloss.Top, components...))
+	// Constrain the appView height to the available space to prevent overflow
+	appView := styles.CurrentTheme().S().Base.
+		Width(a.width).
+		Height(a.height).
+		Render(lipgloss.JoinVertical(lipgloss.Top, components...))
 	layers := []*lipgloss.Layer{
 		lipgloss.NewLayer(appView),
 	}
@@ -927,12 +938,12 @@ func (a *appModel) renderDownloadStatus() string {
 	if a.downloadManager == nil {
 		return ""
 	}
-	
+
 	status := a.downloadManager.GetStatusString()
 	if status == "" {
 		return ""
 	}
-	
+
 	t := styles.CurrentTheme()
 	return t.S().Base.
 		Background(t.BgSubtle).
@@ -960,7 +971,7 @@ func NewWithSize(app *app.App, width, height int) tea.Model {
 	}
 	slog.Info("NewWithSize after min check",
 		"final_width", width, "final_height", height)
-	
+
 	chatPage := chat.New(app)
 	keyMap := DefaultKeyMap()
 	keyMap.pageBindings = chatPage.Bindings()
@@ -986,17 +997,17 @@ func NewWithSize(app *app.App, width, height int) tea.Model {
 
 		dialog:      dialogCmp,
 		completions: completions.New(),
-		
+
 		// Start with loading screen
 		isLoading:     true,
 		loadingScreen: loadingScreen,
-		
+
 		// Initialize with provided dimensions
-		wWidth: width,
+		wWidth:  width,
 		wHeight: height,
-		width: width,
-		height: height - 3, // Reserve space for status bar on first paint
-		
+		width:   width,
+		height:  height - 3, // Reserve space for status bar on first paint
+
 		// Background downloads
 		downloadManager: background.NewDownloadManager(),
 	}
@@ -1018,12 +1029,12 @@ func (a *appModel) checkShellShortcuts() tea.Cmd {
 			// Silently ignore errors
 			return nil
 		}
-		
+
 		// If shortcuts don't exist, return message to show dialog
 		if !hasShortcut {
 			return ShellShortcutCheckMsg{NeedsSetup: true}
 		}
-		
+
 		return nil
 	}
 }
@@ -1036,7 +1047,6 @@ func (a *appModel) startInitialization() tea.Cmd {
 	})
 }
 
-
 // findNgrokPath attempts to find ngrok in common locations
 func findNgrokPath() string {
 	// Check common locations
@@ -1045,13 +1055,13 @@ func findNgrokPath() string {
 		"./build/ngrok",
 		"ngrok", // in PATH
 	}
-	
+
 	for _, path := range paths {
 		if _, err := exec.LookPath(path); err == nil {
 			return path
 		}
 	}
-	
+
 	return ""
 }
 
@@ -1059,7 +1069,7 @@ func findNgrokPath() string {
 func (a *appModel) startWebShare(sessionID string) tea.Cmd {
 	return func() tea.Msg {
 		fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: Starting web share for session %s\n", sessionID)
-		
+
 		// Stop any existing web share
 		if a.webShare != nil {
 			fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: Stopping existing web share\n")
@@ -1072,15 +1082,15 @@ func (a *appModel) startWebShare(sessionID string) tea.Cmd {
 				}()
 			}()
 		}
-		
+
 		// Create new web share
 		fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: Creating new SessionShare\n")
 		a.webShare = webshare.NewSessionShare(sessionID)
-		
+
 		fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: Calling webShare.Start()\n")
 		urls, err := a.webShare.Start()
 		fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: webShare.Start() returned, err=%v\n", err)
-		
+
 		if err != nil {
 			// Check if the error is about ngrok authentication
 			if strings.Contains(err.Error(), "ngrok authentication required") {
@@ -1090,27 +1100,27 @@ func (a *appModel) startWebShare(sessionID string) tea.Cmd {
 					// Try to find it ourselves
 					ngrokPath = findNgrokPath()
 				}
-				
+
 				// Show ngrok auth dialog
 				return dialogs.OpenDialogMsg{
 					Model: ngrokauth.NewNgrokAuthDialog(ngrokPath, sessionID),
 				}
 			}
-			
+
 			return util.InfoMsg{
 				Type: util.InfoTypeError,
 				Msg:  fmt.Sprintf("Failed to start web share: %v", err),
 				TTL:  5 * time.Second,
 			}
 		}
-		
+
 		// Start a goroutine to periodically broadcast updates
 		// Use the webShare's context to properly stop the goroutine
 		fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: Starting broadcast loop\n")
 		if a.webShare != nil {
 			go a.webShare.StartBroadcastLoop()
 		}
-		
+
 		// Start SSE client in a goroutine (non-blocking)
 		if urls != nil && urls.LocalURL != "" {
 			fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: Starting SSE client for %s\n", urls.LocalURL)
@@ -1119,7 +1129,7 @@ func (a *appModel) startWebShare(sessionID string) tea.Cmd {
 			sseClient := webshare.NewSSEClient(urls.LocalURL, nil)
 			sseClient.Start()
 		}
-		
+
 		fmt.Fprintf(os.Stderr, "[DEBUG] startWebShare: Creating batch commands\n")
 		// Return both the dialog and a message to update the sidebar
 		return tea.Batch(

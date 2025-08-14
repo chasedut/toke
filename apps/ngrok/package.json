@@ -23,7 +23,7 @@
     "info": "npx ngrok version && npx ngrok config check"
   },
   "dependencies": {
-    "ngrok": "^5.0.0",
+    "ngrok": "^4.3.3",
     "dotenv": "^16.0.0"
   },
   "devDependencies": {

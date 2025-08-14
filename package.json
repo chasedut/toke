@@ -17,6 +17,7 @@
     "build:archive": "./build.sh --archive",
     "build:app": "./build.sh --app",
     "build:all": "./build.sh --archive --app",
+    "build:dev:bundle:all": "npm run build && npm run build:archive",
     "dev": "turbo run dev --parallel",
     "start": "cd build/toke-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/') && ./toke",
     "start:built": "cd build/toke-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/') && ./toke",
@@ -42,5 +43,6 @@
   "homepage": "https://github.com/chasedut/toke#readme",
   "devDependencies": {
     "turbo": "^2.5.5"
-  }
+  },
+  "packageManager": "npm@10.8.2"
 }

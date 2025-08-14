@@ -118,80 +118,10 @@ func AvailableModels() []ModelOption {
 			}(),
 		},
 		
-		// Tier 1: Light & Fast (2-4GB) - For quick responses and lower RAM (GGUF)
-		{
-			ID:          "qwen2.5-coder-7b-q4_k_m",
-			Name:        "Qwen 2.5 Coder 7B (GGUF)",
-			Description: "Best coding model. Fast and accurate. GGUF Q4_K_M quantization.",
-			Size:        4794158596,              // 4.47 GB actual size
-			Memory:      8 * 1024 * 1024 * 1024,  // 8 GB RAM
-			URL:         "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q4_k_m.gguf",
-			Checksum:    "placeholder",
-			Provider:    "llamacpp",
-			Tier:        TierBottomShelf,
-			Recommended: !isAppleSilicon, // Recommended for non-Apple Silicon
-			Available:   true, // GGUF works everywhere
-		},
-		{
-			ID:          "qwen2.5-3b-q4_k_m",
-			Name:        "Qwen 2.5 3B",
-			Description: "Smaller, faster model. Good for simple tasks. GGUF format.",
-			Size:        2 * 1024 * 1024 * 1024, // 2 GB
-			Memory:      4 * 1024 * 1024 * 1024, // 4 GB RAM
-			URL:         "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf",
-			Checksum:    "placeholder",
-			Provider:    "llamacpp",
-			Tier:        TierBottomShelf,
-			Recommended: false,
-		},
-		
-		// Tier 2: Balanced (8-12GB) - Better quality, still reasonable size
-		{
-			ID:          "qwen2.5-14b-q4_k_m",
-			Name:        "Qwen 2.5 14B",
-			Description: "Larger, more capable model. Excellent reasoning. GGUF format.",
-			Size:        8 * 1024 * 1024 * 1024,  // 8 GB
-			Memory:      16 * 1024 * 1024 * 1024, // 16 GB RAM
-			URL:         "https://huggingface.co/Qwen/Qwen2.5-14B-Instruct-GGUF/resolve/main/qwen2.5-14b-instruct-q4_k_m.gguf",
-			Checksum:    "placeholder",
-			Provider:    "llamacpp",
-			Tier:        TierMidShelf,
-			Recommended: true,
-		},
-		{
-			ID:          "deepseek-coder-v2-lite-q4_k_m",
-			Name:        "DeepSeek Coder V2 Lite",
-			Description: "Specialized for code generation. 16B parameters. GGUF format.",
-			Size:        9 * 1024 * 1024 * 1024,  // 9 GB
-			Memory:      18 * 1024 * 1024 * 1024, // 18 GB RAM
-			URL:         "https://huggingface.co/deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct-GGUF/resolve/main/deepseek-coder-v2-lite-instruct-q4_k_m.gguf",
-			Checksum:    "placeholder",
-			Provider:    "llamacpp",
-			Tier:        TierMidShelf,
-			Recommended: false,
-		},
-		
-		// Tier 3: Power User (40GB+) - Maximum capability
-		{
-			ID:          "glm-4.5-air-q2_k",
-			Name:        "GLM 4.5 Air Q2_K",
-			Description: "Massive 107B parameter model. Superior quality. 2-bit quantization.",
-			Size:        44 * 1024 * 1024 * 1024,  // 44 GB
-			Memory:      48 * 1024 * 1024 * 1024,  // 48 GB RAM
-			URL:         "https://huggingface.co/mradermacher/GLM-4.5-Air-GGUF/resolve/main/GLM-4.5-Air.Q2_K.gguf",
-			Checksum:    "placeholder",
-			Provider:    "llamacpp",
-			Tier:        TierTopShelf,
-			Recommended: true,
-		},
+		// Note: GGUF/llamacpp models removed - only MLX models supported
 	}
 	
-	// Set availability for all models
-	for i := range models {
-		if !models[i].Available && models[i].Provider == "llamacpp" {
-			models[i].Available = true // GGUF models work everywhere
-		}
-	}
+	// Only MLX models are supported now
 	
 	return models
 }
@@ -208,14 +138,20 @@ func GetModelByID(id string) *ModelOption {
 
 // GetRecommendedModel returns the recommended model for most users
 func GetRecommendedModel() *ModelOption {
-	// Return Qwen 2.5 Coder 7B as the recommended option
+	// Return GLM 4.5 Air 4-bit as the recommended option for Apple Silicon
 	models := AvailableModels()
 	for i := range models {
-		if models[i].ID == "qwen2.5-coder-7b-q4_k_m" {
+		if models[i].ID == "glm-4.5-air-4bit" && models[i].Available {
 			return &models[i]
 		}
 	}
-	return &models[0]
+	// Fallback to first available model
+	for i := range models {
+		if models[i].Available {
+			return &models[i]
+		}
+	}
+	return nil
 }
 
 // GetModelsByTier returns all models in a specific tier

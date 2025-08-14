@@ -132,6 +132,13 @@ type Permissions struct {
 	SkipRequests bool     `json:"-"`                                                                                                                              // Automatically accept all permissions (YOLO mode)
 }
 
+type JiraConfig struct {
+	URL      string `json:"url,omitempty" jsonschema:"description=Jira instance URL,example=https://yourcompany.atlassian.net"`
+	Email    string `json:"email,omitempty" jsonschema:"description=Email address for Jira authentication"`
+	APIToken string `json:"api_token,omitempty" jsonschema:"description=API token for Jira authentication"`
+	Enabled  bool   `json:"enabled,omitempty" jsonschema:"description=Whether Jira integration is enabled,default=false"`
+}
+
 type Options struct {
 	ContextPaths         []string       `json:"context_paths,omitempty" jsonschema:"description=Paths to files containing context information for the AI,example=.cursorrules,example=TOKE.md"`
 	TUI                  *TUIOptions    `json:"tui,omitempty" jsonschema:"description=Terminal user interface options"`
@@ -259,6 +266,9 @@ type Config struct {
 	Options *Options `json:"options,omitempty" jsonschema:"description=General application options"`
 
 	Permissions *Permissions `json:"permissions,omitempty" jsonschema:"description=Permission settings for tool usage"`
+
+	// Integrations
+	Jira *JiraConfig `json:"jira,omitempty" jsonschema:"description=Jira integration configuration"`
 
 	// Internal
 	workingDir string `json:"-"`

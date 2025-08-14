@@ -9,13 +9,13 @@ import (
 	"github.com/charmbracelet/bubbles/v2/spinner"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
+	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/chasedut/toke/internal/config"
 	"github.com/chasedut/toke/internal/tui/components/core"
 	"github.com/chasedut/toke/internal/tui/components/dialogs"
 	"github.com/chasedut/toke/internal/tui/exp/list"
 	"github.com/chasedut/toke/internal/tui/styles"
 	"github.com/chasedut/toke/internal/tui/util"
-	"github.com/charmbracelet/lipgloss/v2"
 )
 
 const (
@@ -49,6 +49,12 @@ type LaunchAPISetupMsg struct{}
 
 // CloseModelDialogMsg is sent when a model is selected
 type CloseModelDialogMsg struct{}
+
+// APIKeyVerifiedMsg is sent when an API key is verified (or OAuth token obtained)
+type APIKeyVerifiedMsg struct {
+	ProviderID string
+	APIKey     string
+}
 
 // ModelDialog interface for the model selection dialog
 type ModelDialog interface {
@@ -182,7 +188,7 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					util.CmdHandler(LaunchLocalSetupMsg{}),
 				)
 			}
-			
+
 			if selectedItem.Provider.ID == "api_setup" {
 				// Launch the API key setup dialog
 				return m, tea.Sequence(
@@ -204,7 +210,17 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}),
 				)
 			} else {
-				// Provider not configured, show API key input
+				// Provider not configured
+				// Check if it's GitHub Copilot - use OAuth flow
+				if selectedItem.Provider.ID == "github_copilot" {
+					m.selectedModel = selectedItem
+					m.selectedModelType = modelType
+					// Open OAuth dialog
+					return m, util.CmdHandler(dialogs.OpenDialogMsg{
+						Model: NewGitHubOAuthDialog(),
+					})
+				}
+				// Regular providers - show API key input
 				m.needsAPIKey = true
 				m.selectedModel = selectedItem
 				m.selectedModelType = modelType
@@ -263,6 +279,15 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		u, cmd := m.apiKeyInput.Update(msg)
 		m.apiKeyInput = u.(*APIKeyInput)
 		return m, cmd
+	case APIKeyVerifiedMsg:
+		// Handle OAuth token or API key from external source
+		if m.selectedModel != nil && m.selectedModel.Provider.ID == catwalk.InferenceProvider(msg.ProviderID) {
+			// Save the API key/token and continue with model selection
+			m.isAPIKeyValid = true
+			m.apiKeyValue = msg.APIKey
+			return m, m.saveAPIKeyAndContinue(msg.APIKey)
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -328,7 +353,7 @@ func (m *modelDialogCmp) listWidth() int {
 	if m.width <= 2 {
 		return 10 // Default width
 	}
-	return max(10, m.width - 2)
+	return max(10, m.width-2)
 }
 
 func (m *modelDialogCmp) listHeight() int {
@@ -347,11 +372,11 @@ func (m *modelDialogCmp) Position() (int, int) {
 	if m.wHeight == 0 || m.wWidth == 0 {
 		return 2, 10
 	}
-	
+
 	// Center vertically but ensure dialog fits
 	dialogHeight := m.listHeight() + 6 // list height + borders + padding
 	row := (m.wHeight - dialogHeight) / 2
-	
+
 	// Ensure dialog doesn't go off bottom
 	maxRow := m.wHeight - dialogHeight - 3
 	if row > maxRow {
@@ -360,7 +385,7 @@ func (m *modelDialogCmp) Position() (int, int) {
 	if row < 2 {
 		row = 2
 	}
-	
+
 	col := m.wWidth / 2
 	col -= m.width / 2
 	if col < 2 {

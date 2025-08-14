@@ -14,11 +14,14 @@ cd llama.cpp
 # Update to latest
 git pull
 
-# Build
-make clean
-make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu) llama-server
+# Build using CMake
+mkdir -p build
+cd build
+cmake .. -DGGML_METAL=ON
+cmake --build . --config Release -j $(nproc 2>/dev/null || sysctl -n hw.ncpu) --target llama-server
+cd ..
 
 # Copy binary
-cp llama-server ../llama-server-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)
+cp build/bin/llama-server ../llama-server-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)
 
 echo "Llama server built successfully!"

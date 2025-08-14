@@ -50,16 +50,12 @@ func (o *Orchestrator) SetupModel(ctx context.Context, model *ModelOption, progr
 		return fmt.Errorf("failed to create directories: %w", err)
 	}
 	
-	// Create appropriate backend based on provider
-	var backend ModelBackend
-	switch model.Provider {
-	case "mlx":
-		backend = NewMLXBackend(o.dataDir, model.ID)
-	case "llamacpp":
-		backend = NewLlamaCppBackend(o.dataDir, model.ID)
-	default:
-		return fmt.Errorf("unsupported provider: %s", model.Provider)
+	// Only support MLX backend for now
+	if model.Provider != "mlx" {
+		return fmt.Errorf("only MLX models are supported for local execution")
 	}
+	
+	backend := NewMLXBackend(o.dataDir, model.ID)
 	
 	// Step 1: Download server if needed
 	slog.Info("Checking server installation...", "provider", model.Provider)
