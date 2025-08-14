@@ -77,17 +77,7 @@ func (m *AddModelsCmp) buildOptions() []list.Group[list.CompletionItem[AddOption
 	)
 	quickGroup.Items = append(quickGroup.Items, recommendedItem)
 
-	// Add API setup
-	apiItem := list.NewCompletionItem(
-		"🔑 Setup API Provider",
-		AddOption{
-			Type:        "setup_api",
-			Title:       "Setup API Provider",
-			Description: "Configure OpenAI, Anthropic, or other cloud providers",
-		},
-		list.WithCompletionID("quick:api"),
-	)
-	quickGroup.Items = append(quickGroup.Items, apiItem)
+	// Removed API setup - moved to command palette
 
 	groups = append(groups, quickGroup)
 
@@ -259,10 +249,6 @@ func (m *AddModelsCmp) handleSelection(option AddOption) (tea.Model, tea.Cmd) {
 		// Switch to the download dialog
 		return m, util.CmdHandler(dialogs.OpenDialogMsg{Model: backendDialog})
 
-	case "setup_api":
-		// Open the regular model switcher which has API setup
-		return m, util.CmdHandler(dialogs.OpenDialogMsg{Model: NewModelDialogCmp()})
-
 	case "browse_hf":
 		// Open the new HF Browse dialog as a modal
 		hfDialog := NewHFBrowseCmp()
@@ -305,16 +291,13 @@ func (m *AddModelsCmp) View() string {
 			}
 			
 			content.WriteString(cursor)
-			content.WriteString(itemStyle.Render(item.Text()))
 			
-			// Show description for selected item
-			if itemIdx == m.selectedIdx && item.Value().Description != "" {
-				descStyle := lipgloss.NewStyle().
-					Foreground(m.theme.FgHalfMuted).
-					MarginLeft(4)
-				content.WriteString("\n")
-				content.WriteString(descStyle.Render(item.Value().Description))
+			// Format as "Model - Description" on same line
+			displayText := item.Text()
+			if item.Value().Description != "" {
+				displayText = fmt.Sprintf("%s - %s", item.Text(), item.Value().Description)
 			}
+			content.WriteString(itemStyle.Render(displayText))
 			
 			content.WriteString("\n")
 			itemIdx++

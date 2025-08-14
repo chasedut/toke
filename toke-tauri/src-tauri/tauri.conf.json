@@ -28,9 +28,7 @@
       "signingIdentity": null
     },
     "resources": [
-      "../../build/toke-darwin-arm64/**/*",
-      "../../build/toke-darwin-amd64/**/*", 
-      "../../build/toke-windows-amd64/**/*"
+      "../../build/toke-darwin-arm64/**/*"
     ],
     "shortDescription": "",
     "targets": "all",

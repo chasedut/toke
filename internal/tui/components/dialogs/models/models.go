@@ -85,7 +85,8 @@ func NewModelDialogCmp() ModelDialog {
 	listKeyMap.UpOneItem = keyMap.Previous
 
 	t := styles.CurrentTheme()
-	modelList := NewModelListComponent(listKeyMap, "Choose a model for large, complex tasks", true)
+	modelList := NewModelListComponent(listKeyMap, "Choose a cloud model for large, complex tasks", true)
+	modelList.excludeLocal = true // Exclude local models from this dialog
 	apiKeyInput := NewAPIKeyInput()
 	apiKeyInput.SetShowTitle(false)
 	help := help.New()
@@ -287,7 +288,7 @@ func (m *modelDialogCmp) View() string {
 	radio := m.modelTypeRadio()
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
-		t.S().Base.Padding(0, 1, 1, 1).Render(core.Title("Switch Model", m.width-lipgloss.Width(radio)-5)+" "+radio),
+		t.S().Base.Padding(0, 1, 1, 1).Render(core.Title("Choose Cloud Model", m.width-lipgloss.Width(radio)-5)+" "+radio),
 		listView,
 		"",
 		t.S().Base.Width(m.width-2).PaddingLeft(1).AlignHorizontal(lipgloss.Left).Render(m.help.View(m.keyMap)),

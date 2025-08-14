@@ -16,9 +16,10 @@ import (
 type listModel = list.FilterableGroupList[list.CompletionItem[ModelOption]]
 
 type ModelListComponent struct {
-	list      listModel
-	modelType int
-	providers []catwalk.Provider
+	list           listModel
+	modelType      int
+	providers      []catwalk.Provider
+	excludeLocal   bool // Whether to exclude local models from the list
 }
 
 func NewModelListComponent(keyMap list.KeyMap, inputPlaceholder string, shouldResize bool) *ModelListComponent {
@@ -114,29 +115,31 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 	configuredIcon := t.S().Base.Foreground(t.Success).Render(styles.CheckIcon)
 	configured := fmt.Sprintf("%s %s", configuredIcon, t.S().Subtle.Render("Configured"))
 	
-	// Add Local Models section only if a local model is configured
-	if localConfig, _ := cfg.GetLocalModelConfig(); localConfig != nil && localConfig.Enabled {
-		localSection := list.NewItemSection("🖥️  Local Models")
-		localSection.SetInfo(configured)
-		
-		localGroup := list.Group[list.CompletionItem[ModelOption]]{
-			Section: localSection,
+	// Add Local Models section only if a local model is configured and not excluded
+	if !m.excludeLocal {
+		if localConfig, _ := cfg.GetLocalModelConfig(); localConfig != nil && localConfig.Enabled {
+			localSection := list.NewItemSection("🖥️  Local Models")
+			localSection.SetInfo(configured)
+			
+			localGroup := list.Group[list.CompletionItem[ModelOption]]{
+				Section: localSection,
+			}
+			
+			localModelItem := list.NewCompletionItem(
+				fmt.Sprintf("✓ %s (Active)", localConfig.ModelID),
+				ModelOption{
+					Provider: catwalk.Provider{ID: "local", Name: "Local Model"},
+					Model:    catwalk.Model{ID: localConfig.ModelID, Name: localConfig.ModelID},
+				},
+				list.WithCompletionID(fmt.Sprintf("local:%s", localConfig.ModelID)),
+			)
+			localGroup.Items = append(localGroup.Items, localModelItem)
+			
+			// Mark if this is the currently selected model (but don't auto-focus)
+			// Just for tracking, not for selection when currentModel.Provider == "local"
+			
+			groups = append(groups, localGroup)
 		}
-		
-		localModelItem := list.NewCompletionItem(
-			fmt.Sprintf("✓ %s (Active)", localConfig.ModelID),
-			ModelOption{
-				Provider: catwalk.Provider{ID: "local", Name: "Local Model"},
-				Model:    catwalk.Model{ID: localConfig.ModelID, Name: localConfig.ModelID},
-			},
-			list.WithCompletionID(fmt.Sprintf("local:%s", localConfig.ModelID)),
-		)
-		localGroup.Items = append(localGroup.Items, localModelItem)
-		
-		// Mark if this is the currently selected model (but don't auto-focus)
-		// Just for tracking, not for selection when currentModel.Provider == "local"
-		
-		groups = append(groups, localGroup)
 	}
 
 	// Create a map to track which providers we've already added

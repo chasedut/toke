@@ -26,6 +26,12 @@ func NewSimple() *SimpleLoadingScreen {
 	}
 }
 
+// SetSize sets the initial dimensions
+func (l *SimpleLoadingScreen) SetSize(width, height int) {
+	l.width = width
+	l.height = height
+}
+
 // Init initializes the loading screen
 func (l *SimpleLoadingScreen) Init() tea.Cmd {
 	return animateSimple()
@@ -49,9 +55,13 @@ func (l *SimpleLoadingScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the simple loading screen
 func (l *SimpleLoadingScreen) View() string {
+	// Don't render if we don't have dimensions yet
 	if l.width == 0 || l.height == 0 {
 		return ""
 	}
+	
+	width := l.width
+	height := l.height
 	
 	// ASCII art for TOKE
 	asciiArt := []string{
@@ -110,8 +120,8 @@ func (l *SimpleLoadingScreen) View() string {
 	finalContent := content.String()
 	
 	return lipgloss.Place(
-		l.width,
-		l.height,
+		width,
+		height,
 		lipgloss.Center,
 		lipgloss.Center,
 		finalContent,
