@@ -39,7 +39,7 @@
     }
   },
   "productName": "Toke",
-  "version": "0.1.0",
+  "version": "0.42.4",
   "plugins": {
     "updater": {
       "endpoints": [

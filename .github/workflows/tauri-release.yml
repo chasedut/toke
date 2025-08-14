@@ -56,6 +56,7 @@ jobs:
           go build -o build/toke-${{ runner.os }}-${{ runner.arch }}/toke .
 
       - name: Update Tauri version from VERSION file
+        shell: bash
         run: |
           VERSION=$(cat VERSION)
           echo "Updating tauri.conf.json to version $VERSION"
