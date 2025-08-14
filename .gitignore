@@ -87,6 +87,11 @@ apps/ngrok/node_modules/
 /toke
 /toke-*
 
+# Embedded backend binaries (should be downloaded during build)
+apps/toke/internal/backend/embedded_backends/*.tar.gz
+apps/toke/internal/backend/embedded_backends/*.gz
+apps/backend/llama/*.gz
+
 # Python virtual environments
 **/venv/
 **/*-env/
