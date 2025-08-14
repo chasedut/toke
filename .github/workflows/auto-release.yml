@@ -76,16 +76,72 @@ jobs:
       - name: Update VERSION file
         run: |
           echo "${{ steps.new-version.outputs.version }}" > VERSION
+      
+      - name: Create version bump PR
+        id: create-pr
+        run: |
+          # Create a new branch for the version bump
+          BRANCH_NAME="auto-version-bump-${{ steps.new-version.outputs.version }}"
+          git checkout -b "$BRANCH_NAME"
+          
+          # Configure git
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
+          
+          # Commit the version change
           git add VERSION
           git commit -m "chore: bump version to ${{ steps.new-version.outputs.version }}"
-          git push
+          
+          # Push the branch
+          git push origin "$BRANCH_NAME"
+          
+          # Create PR
+          gh pr create \
+            --title "chore: bump version to ${{ steps.new-version.outputs.version }}" \
+            --body "Automated version bump from PR #${{ github.event.pull_request.number }}" \
+            --base develop \
+            --head "$BRANCH_NAME" \
+            --label "version-bump"
+          
+          # Get PR number
+          PR_NUMBER=$(gh pr list --head "$BRANCH_NAME" --json number -q '.[0].number')
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Create and push tag
+      - name: Auto-merge version bump PR
         run: |
+          # Enable auto-merge for the PR
+          gh pr merge ${{ steps.create-pr.outputs.pr_number }} \
+            --auto \
+            --merge \
+            --delete-branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Wait for merge and create tag
+        run: |
+          # Wait for the PR to be merged (max 60 seconds)
+          for i in {1..12}; do
+            STATUS=$(gh pr view ${{ steps.create-pr.outputs.pr_number }} --json state -q '.state')
+            if [ "$STATUS" = "MERGED" ]; then
+              echo "PR merged successfully"
+              break
+            fi
+            echo "Waiting for PR to merge... ($i/12)"
+            sleep 5
+          done
+          
+          # Fetch latest changes
+          git fetch origin develop
+          git checkout develop
+          git pull origin develop
+          
+          # Create and push tag
           git tag "v${{ steps.new-version.outputs.version }}"
           git push origin "v${{ steps.new-version.outputs.version }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Generate release notes
         id: release-notes
