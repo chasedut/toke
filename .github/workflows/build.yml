@@ -219,7 +219,7 @@ jobs:
         echo "✅ ngrok downloaded and verified successfully"
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     needs: [build, build-mlx-server, test-llama-server, test-tauri-app, test-ngrok-integration]
     runs-on: ubuntu-latest
     permissions:
@@ -228,12 +228,22 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Generate version
+      id: version
+      run: |
+        # Generate version based on date and short SHA
+        VERSION="v$(date +'%Y.%m.%d')-${GITHUB_SHA::7}"
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Generated version: $VERSION"
+    
     - name: Download all artifacts
       uses: actions/download-artifact@v4
     
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
+        tag_name: ${{ steps.version.outputs.version }}
+        name: "Release ${{ steps.version.outputs.version }}"
         files: |
           toke-*/*
           mlx-server-*/*
