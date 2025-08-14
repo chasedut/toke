@@ -51,9 +51,30 @@ jobs:
         with:
           go-version: '1.24'
 
-      - name: Build toke binary
+      - name: Build toke binary (macOS)
+        if: runner.os == 'macOS'
         run: |
-          go build -o build/toke-${{ runner.os }}-${{ runner.arch }}/toke .
+          # runner.arch returns ARM64 or X64, we need arm64 or amd64
+          ARCH_NAME="${{ runner.arch }}"
+          if [[ "$ARCH_NAME" == "ARM64" ]]; then
+            ARCH_NAME="arm64"
+          elif [[ "$ARCH_NAME" == "X64" ]]; then
+            ARCH_NAME="amd64"
+          fi
+          echo "Building toke binary to build/toke-darwin-${ARCH_NAME}/toke"
+          go build -o "build/toke-darwin-${ARCH_NAME}/toke" .
+
+      - name: Build toke binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # runner.arch returns X64, we need amd64
+          $archName = "${{ runner.arch }}"
+          if ($archName -eq "X64") {
+            $archName = "amd64"
+          }
+          Write-Host "Building toke binary to build/toke-windows-$archName/toke.exe"
+          go build -o "build/toke-windows-$archName/toke.exe" .
 
       - name: Get VERSION
         id: get_version
