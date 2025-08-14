@@ -1,0 +1,207 @@
+name: PR Artifacts
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      toke: ${{ steps.changes.outputs.toke }}
+      llama: ${{ steps.changes.outputs.llama }}
+      mlx: ${{ steps.changes.outputs.mlx }}
+      diffusion: ${{ steps.changes.outputs.diffusion }}
+      tauri: ${{ steps.changes.outputs.tauri }}
+      ngrok: ${{ steps.changes.outputs.ngrok }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            toke:
+              - 'apps/toke/**'
+            llama:
+              - 'apps/backend/llama/**'
+            mlx:
+              - 'apps/backend/mlx/**'
+            diffusion:
+              - 'apps/backend/diffusion/**'
+            tauri:
+              - 'apps/tauri/**'
+            ngrok:
+              - 'apps/ngrok/**'
+
+  build-toke:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.toke == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+      
+      - name: Build Toke CLI
+        working-directory: apps/toke
+        run: |
+          go build -o toke-${{ runner.os }}-${{ runner.arch }}
+      
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: toke-${{ runner.os }}-${{ runner.arch }}
+          path: apps/toke/toke-${{ runner.os }}-${{ runner.arch }}
+
+  build-llama:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.llama == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build Llama Server
+        working-directory: apps/backend/llama
+        run: |
+          chmod +x build.sh
+          ./build.sh
+      
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: llama-server-${{ runner.os }}-${{ runner.arch }}
+          path: apps/backend/llama/llama-server-*
+
+  build-mlx:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.mlx == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Setup MLX Environment
+        working-directory: apps/backend/mlx
+        run: |
+          chmod +x setup.sh
+          ./setup.sh
+      
+      - name: Create MLX Bundle
+        working-directory: apps/backend/mlx
+        run: |
+          tar -czf mlx-server-bundle.tar.gz mlx_server.py requirements.txt
+      
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: mlx-server-bundle
+          path: apps/backend/mlx/mlx-server-bundle.tar.gz
+
+  build-diffusion:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.diffusion == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Setup Diffusion Environment
+        working-directory: apps/backend/diffusion
+        run: |
+          chmod +x setup.sh
+          ./setup.sh
+      
+      - name: Create Diffusion Bundle
+        working-directory: apps/backend/diffusion
+        run: |
+          tar -czf diffusion-server-bundle.tar.gz diffusion_server.py requirements.txt
+      
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: diffusion-server-bundle
+          path: apps/backend/diffusion/diffusion-server-bundle.tar.gz
+
+  build-tauri:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.tauri == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Install Dependencies
+        run: npm ci
+      
+      - name: Build Tauri App
+        working-directory: apps/tauri
+        run: |
+          npm install
+          npm run build
+      
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: tauri-${{ runner.os }}-${{ runner.arch }}
+          path: apps/tauri/target/release/
+
+  comment-artifacts:
+    needs: [build-toke, build-llama, build-mlx, build-diffusion, build-tauri]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment PR with Artifacts
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const artifactsList = [];
+            const jobs = context.payload.workflow_run?.jobs || [];
+            
+            jobs.forEach(job => {
+              if (job.status === 'completed' && job.conclusion === 'success') {
+                artifactsList.push(`✅ ${job.name}`);
+              }
+            });
+            
+            const body = `## 📦 Build Artifacts Available
+            
+            The following artifacts were built for this PR:
+            ${artifactsList.join('\n')}
+            
+            You can download them from the [Actions tab](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });

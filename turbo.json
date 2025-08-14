@@ -1,0 +1,59 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["**/.env.*local"],
+  "globalEnv": ["NODE_ENV", "PORT"],
+  "pipeline": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "build/**", ".next/**", "!.next/cache/**"],
+      "env": ["NODE_ENV", "VERSION"]
+    },
+    "build:local": {
+      "dependsOn": ["^build"],
+      "outputs": ["build/**"],
+      "cache": true
+    },
+    "build:release": {
+      "dependsOn": ["^build"],
+      "outputs": ["build/**", "dist/**"],
+      "cache": true
+    },
+    "setup": {
+      "outputs": ["*-env/**", "node_modules/**"],
+      "cache": true
+    },
+    "dev": {
+      "persistent": true,
+      "cache": false,
+      "env": ["PORT", "HOST"]
+    },
+    "start": {
+      "dependsOn": ["build"],
+      "persistent": true,
+      "cache": false
+    },
+    "lint": {
+      "outputs": [],
+      "cache": true
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "cache": true
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "outputs": ["coverage/**"],
+      "inputs": ["src/**", "internal/**", "test/**", "tests/**", "*.go", "*.py", "*.js"]
+    },
+    "clean": {
+      "cache": false
+    },
+    "clean:models": {
+      "cache": false
+    },
+    "clean:cache": {
+      "cache": false
+    }
+  }
+}

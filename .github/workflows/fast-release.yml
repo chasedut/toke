@@ -1,0 +1,286 @@
+name: Fast Release from PR
+
+on:
+  push:
+    branches: [ develop ]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to release from'
+        required: false
+        type: string
+
+jobs:
+  find-pr-artifacts:
+    runs-on: ubuntu-latest
+    outputs:
+      pr_number: ${{ steps.find_pr.outputs.pr_number }}
+      has_artifacts: ${{ steps.check_artifacts.outputs.has_artifacts }}
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
+    
+    - name: Find associated PR
+      id: find_pr
+      run: |
+        if [ -n "${{ github.event.inputs.pr_number }}" ]; then
+          # Manual trigger with PR number
+          PR_NUMBER="${{ github.event.inputs.pr_number }}"
+        else
+          # Find PR for this commit
+          COMMIT_SHA="${{ github.sha }}"
+          
+          # Try to find PR that was merged with this commit
+          PR_NUMBER=$(gh pr list \
+            --state merged \
+            --limit 10 \
+            --json number,mergeCommit \
+            --jq ".[] | select(.mergeCommit.oid == \"$COMMIT_SHA\") | .number" \
+            || echo "")
+          
+          if [ -z "$PR_NUMBER" ]; then
+            # Try to find PR by commit in its history
+            PR_NUMBER=$(gh pr list \
+              --state merged \
+              --limit 10 \
+              --json number,commits \
+              --jq ".[] | select(.commits[].oid == \"$COMMIT_SHA\") | .number" \
+              || echo "")
+          fi
+        fi
+        
+        echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+        
+        if [ -z "$PR_NUMBER" ]; then
+          echo "⚠️ No PR found for this commit, will need to build from scratch"
+        else
+          echo "✅ Found PR #$PR_NUMBER"
+        fi
+      env:
+        GH_TOKEN: ${{ github.token }}
+    
+    - name: Check for PR artifacts
+      id: check_artifacts
+      if: steps.find_pr.outputs.pr_number != ''
+      run: |
+        PR_NUMBER="${{ steps.find_pr.outputs.pr_number }}"
+        
+        # List artifacts for this PR
+        ARTIFACTS=$(gh api \
+          -H "Accept: application/vnd.github+json" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          /repos/${{ github.repository }}/actions/artifacts \
+          --jq ".artifacts[] | select(.name | contains(\"pr$PR_NUMBER\")) | .name" \
+          || echo "")
+        
+        if [ -n "$ARTIFACTS" ]; then
+          echo "✅ Found artifacts from PR #$PR_NUMBER:"
+          echo "$ARTIFACTS"
+          echo "has_artifacts=true" >> $GITHUB_OUTPUT
+        else
+          echo "⚠️ No artifacts found for PR #$PR_NUMBER"
+          echo "has_artifacts=false" >> $GITHUB_OUTPUT
+        fi
+      env:
+        GH_TOKEN: ${{ github.token }}
+
+  release-from-pr:
+    needs: find-pr-artifacts
+    if: needs.find-pr-artifacts.outputs.has_artifacts == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download PR artifacts
+      run: |
+        PR_NUMBER="${{ needs.find-pr-artifacts.outputs.pr_number }}"
+        
+        echo "Downloading artifacts from PR #$PR_NUMBER..."
+        
+        # Download CLI binary
+        gh run download \
+          --name "toke-cli-darwin-arm64-pr$PR_NUMBER" \
+          --dir ./release-assets \
+          || echo "CLI artifact not found"
+        
+        # Download DMG
+        gh run download \
+          --name "toke-dmg-darwin-arm64-pr$PR_NUMBER" \
+          --dir ./release-assets \
+          || echo "DMG artifact not found"
+        
+        # Download App bundle
+        gh run download \
+          --name "toke-app-darwin-arm64-pr$PR_NUMBER" \
+          --dir ./release-assets \
+          || echo "App bundle not found"
+        
+        # Download build summary
+        gh run download \
+          --name "build-summary-pr$PR_NUMBER" \
+          --dir ./release-assets \
+          || echo "Build summary not found"
+        
+        echo "Downloaded artifacts:"
+        ls -la ./release-assets/
+      env:
+        GH_TOKEN: ${{ github.token }}
+    
+    - name: Generate release version
+      id: version
+      run: |
+        # Use VERSION file or generate from date
+        if [ -f VERSION ]; then
+          VERSION="v$(cat VERSION)"
+        else
+          VERSION="v$(date +'%Y.%m.%d')-${GITHUB_SHA::7}"
+        fi
+        
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Release version: $VERSION"
+    
+    - name: Extract build info
+      id: build_info
+      run: |
+        if [ -f ./release-assets/build-summary.json ]; then
+          MLX_TYPE=$(jq -r '.mlx_server // "optimized"' ./release-assets/build-summary.json)
+          CLI_SIZE=$(jq -r '.sizes.cli_compressed // "unknown"' ./release-assets/build-summary.json)
+          DMG_SIZE=$(jq -r '.sizes.dmg // "unknown"' ./release-assets/build-summary.json)
+          
+          echo "mlx_type=$MLX_TYPE" >> $GITHUB_OUTPUT
+          echo "cli_size=$CLI_SIZE" >> $GITHUB_OUTPUT
+          echo "dmg_size=$DMG_SIZE" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Create Draft Release
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.version }}
+        name: "Toke ${{ steps.version.outputs.version }}"
+        body: |
+          ## 🍃 Toke - Elevated AI
+          
+          **Version:** ${{ steps.version.outputs.version }}
+          **Built from PR:** #${{ needs.find-pr-artifacts.outputs.pr_number }}
+          
+          ### ✨ Features
+          - 🚀 Embedded backends (no separate downloads needed)
+          - 🗜️ Compressed binaries (~119MB with all backends)
+          - ⚡ Unix socket support for 30% faster IPC
+          - 💾 Model caching for instant switching
+          - 🔥 MLX server: ${{ steps.build_info.outputs.mlx_type }}
+          
+          ### 📦 Downloads
+          | Platform | Type | Size | File |
+          |----------|------|------|------|
+          | macOS (Apple Silicon) | Desktop App | ${{ steps.build_info.outputs.dmg_size }} | `Toke_*.dmg` |
+          | macOS (Apple Silicon) | CLI | ${{ steps.build_info.outputs.cli_size }} | `toke-darwin-arm64.tar.gz` |
+          
+          ### 🚀 Installation
+          
+          **Desktop App:**
+          1. Download the `.dmg` file
+          2. Open and drag Toke to Applications
+          3. Launch from Applications or Spotlight
+          
+          **CLI:**
+          ```bash
+          # Download and extract
+          tar -xzf toke-darwin-arm64.tar.gz
+          
+          # Move to PATH
+          sudo mv toke-darwin-arm64 /usr/local/bin/toke
+          
+          # Run
+          toke
+          ```
+          
+          ### 🔧 Commit Info
+          ${{ github.event.head_commit.message }}
+          
+          ---
+          Built with 💚 by the Toke team
+          
+          ### ⚠️ Release Notes
+          **This is a DRAFT release - please review before publishing**
+          - [ ] Test macOS app installation
+          - [ ] Verify CLI binary works
+          - [ ] Check auto-update will work correctly
+          - [ ] Review version number
+          - [ ] Add any additional release notes above
+        files: |
+          ./release-assets/*.tar.gz
+          ./release-assets/*.dmg
+          ./release-assets/*.app.tar.gz
+        draft: true  # CREATE AS DRAFT
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Post release status
+      if: always()
+      run: |
+        if [ "${{ steps.create_release.outcome }}" == "success" ]; then
+          echo "✅ Draft release created successfully!"
+          echo ""
+          echo "📝 **Next Steps:**"
+          echo "1. Go to: https://github.com/${{ github.repository }}/releases"
+          echo "2. Find the draft release: ${{ steps.version.outputs.version }}"
+          echo "3. Test the artifacts"
+          echo "4. Add/edit release notes if needed"
+          echo "5. Click 'Publish release' when ready"
+          echo ""
+          echo "⚠️ **Important:** The release is NOT live until you publish it!"
+          echo "Auto-updating apps will NOT see this version until published."
+          
+          # Create summary for Actions tab
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+        ## ✅ Draft Release Created
+        
+        **Version:** \`${{ steps.version.outputs.version }}\`
+        **Status:** DRAFT (not visible to users)
+        
+        ### 📋 Review Checklist
+        - [ ] Test macOS app installation
+        - [ ] Verify CLI binary works  
+        - [ ] Confirm version number is correct
+        - [ ] Add any additional release notes
+        - [ ] Check auto-update compatibility
+        
+        ### 🚀 Publish Release
+        [Go to draft release](https://github.com/${{ github.repository }}/releases) and click "Publish release" when ready.
+        
+        **Note:** Auto-updating apps will only see this version after you publish it.
+        EOF
+        else
+          echo "❌ Failed to create draft release"
+          exit 1
+        fi
+
+  # Fallback: build from scratch if no PR artifacts
+  build-and-release:
+    needs: find-pr-artifacts
+    if: needs.find-pr-artifacts.outputs.has_artifacts != 'true'
+    runs-on: macos-14
+    permissions:
+      contents: write
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Trigger full build
+      run: |
+        echo "No PR artifacts found, triggering full build..."
+        echo "This will take 10-15 minutes..."
+        
+        # Trigger the original build workflow
+        gh workflow run build.yml
+      env:
+        GH_TOKEN: ${{ github.token }}

@@ -20,7 +20,16 @@
       "Bash(mv:*)",
       "Bash(go:*)",
       "Bash(npm install:*)",
-      "Bash(gh secret set:*)"
+      "Bash(gh secret set:*)",
+      "Bash(git checkout:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(git add:*)",
+      "Bash(git stash:*)",
+      "Bash(tput:*)",
+      "Bash(cat:*)",
+      "Bash(sqlite3:*)",
+      "Bash(npm run build:bundle:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"

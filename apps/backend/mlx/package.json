@@ -1,0 +1,28 @@
+{
+  "name": "@toke/backend-mlx",
+  "version": "0.42.4",
+  "private": true,
+  "description": "MLX backend server for Toke",
+  "scripts": {
+    "build": "npm run setup",
+    "setup": "npm run setup:venv:check && npm run setup:deps && npm run setup:requirements:create",
+    "setup:venv:check": "[ ! -d \"mlx-env\" ] && python3 -m venv mlx-env || true",
+    "setup:venv": "python3 -m venv mlx-env",
+    "setup:deps": "source mlx-env/bin/activate && pip install --upgrade pip && pip install mlx mlx-lm fastapi uvicorn pydantic",
+    "setup:requirements:create": "echo 'mlx\nmlx-lm\nfastapi\nuvicorn\npydantic' > requirements.txt",
+    "setup:requirements": "source mlx-env/bin/activate && pip install -r requirements.txt",
+    "freeze": "source mlx-env/bin/activate && pip freeze > requirements.txt",
+    "dev": "npm run dev:check && npm run dev:start",
+    "dev:check": "[ -d \"mlx-env\" ] || (echo '❌ MLX not installed. Run npm run setup first.' && exit 1)",
+    "dev:start": "source mlx-env/bin/activate && echo '🚀 Starting MLX server...' && echo '   Port: '${PORT:-8001} && echo '   Model: '${MLX_MODEL:-mlx-community/Llama-3.2-1B-Instruct-4bit} && python mlx_server.py --port ${PORT:-8001} --model ${MLX_MODEL:-mlx-community/Llama-3.2-1B-Instruct-4bit} ${MLX_ARGS}",
+    "dev:reload": "source mlx-env/bin/activate && uvicorn mlx_server:app --reload --port 8001",
+    "test": "source mlx-env/bin/activate && python -m pytest tests/",
+    "test:unit": "source mlx-env/bin/activate && python -m pytest tests/unit",
+    "test:integration": "source mlx-env/bin/activate && python -m pytest tests/integration",
+    "lint": "source mlx-env/bin/activate && pylint mlx_server.py",
+    "format": "source mlx-env/bin/activate && black mlx_server.py",
+    "clean": "rm -rf mlx-env __pycache__ build dist *.egg-info",
+    "clean:models": "rm -rf ~/.cache/huggingface/hub/models--mlx-community",
+    "download:model": "source mlx-env/bin/activate && python -c \"from mlx_lm import load; load('mlx-community/Llama-3.2-1B-Instruct-4bit')\""
+  }
+}

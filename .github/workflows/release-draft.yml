@@ -1,0 +1,431 @@
+name: Draft Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  analyze-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      changed-apps: ${{ steps.changes.outputs.apps }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Get Version
+        id: version
+        run: |
+          VERSION=$(cat VERSION)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Detect Changed Apps
+        id: changes
+        run: |
+          # Get list of changed files since last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            CHANGED_FILES=$(git ls-files)
+          else
+            CHANGED_FILES=$(git diff --name-only $LAST_TAG..HEAD)
+          fi
+          
+          # Detect which apps changed
+          APPS=""
+          if echo "$CHANGED_FILES" | grep -q "apps/toke/"; then
+            APPS="$APPS toke"
+          fi
+          if echo "$CHANGED_FILES" | grep -q "apps/backend/llama/"; then
+            APPS="$APPS llama"
+          fi
+          if echo "$CHANGED_FILES" | grep -q "apps/backend/mlx/"; then
+            APPS="$APPS mlx"
+          fi
+          if echo "$CHANGED_FILES" | grep -q "apps/backend/diffusion/"; then
+            APPS="$APPS diffusion"
+          fi
+          if echo "$CHANGED_FILES" | grep -q "apps/tauri/"; then
+            APPS="$APPS tauri"
+          fi
+          if echo "$CHANGED_FILES" | grep -q "apps/ngrok/"; then
+            APPS="$APPS ngrok"
+          fi
+          
+          echo "apps=$APPS" >> $GITHUB_OUTPUT
+
+  build-toke-cli:
+    needs: analyze-changes
+    if: contains(needs.analyze-changes.outputs.changed-apps, 'toke')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+          - os: windows-latest
+            goos: windows
+            goarch: 386
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+      
+      - name: Build Toke CLI
+        working-directory: apps/toke
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          OUTPUT="toke-${{ matrix.goos }}-${{ matrix.goarch }}"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            OUTPUT="${OUTPUT}.exe"
+          fi
+          go build -ldflags="-s -w -X main.Version=${{ needs.analyze-changes.outputs.version }}" -o "$OUTPUT"
+        shell: bash
+      
+      - name: Compress Artifact
+        run: |
+          mkdir -p release-artifacts
+          cd apps/toke
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            7z a ../../release-artifacts/toke-${{ matrix.goos }}-${{ matrix.goarch }}.zip toke-${{ matrix.goos }}-${{ matrix.goarch }}.exe
+          else
+            tar -czf ../../release-artifacts/toke-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz toke-${{ matrix.goos }}-${{ matrix.goarch }}
+          fi
+        shell: bash
+      
+      - name: Upload Release Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: toke-cli-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: release-artifacts/*
+
+  build-llama-backend:
+    needs: analyze-changes
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-amd64
+          - os: ubuntu-latest
+            platform: linux-arm64
+          - os: macos-latest
+            platform: darwin-amd64
+          - os: macos-latest  
+            platform: darwin-arm64
+          - os: windows-latest
+            platform: windows-amd64
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Build Environment
+        if: matrix.os == 'windows-latest'
+        uses: microsoft/setup-msbuild@v1.1
+      
+      - name: Build Llama Server
+        working-directory: apps/backend/llama
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            # Windows build
+            git clone https://github.com/ggerganov/llama.cpp.git
+            cd llama.cpp
+            cmake -B build
+            cmake --build build --config Release
+            cp build/bin/Release/llama-server.exe ../llama-server-${{ matrix.platform }}.exe
+          else
+            chmod +x build.sh
+            ./build.sh
+            mv llama-server-* llama-server-${{ matrix.platform }}
+          fi
+        shell: bash
+      
+      - name: Compress Artifacts
+        run: |
+          mkdir -p release-artifacts
+          cd apps/backend/llama
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            7z a ../../../release-artifacts/llama-server-${{ matrix.platform }}.zip llama-server-${{ matrix.platform }}.exe
+          else
+            tar -czf ../../../release-artifacts/llama-server-${{ matrix.platform }}.tar.gz llama-server-${{ matrix.platform }}
+          fi
+        shell: bash
+      
+      - name: Upload Release Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: llama-backend-${{ matrix.platform }}
+          path: release-artifacts/*
+
+  build-mlx-backend:
+    needs: analyze-changes
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Setup MLX Environment
+        working-directory: apps/backend/mlx
+        run: |
+          chmod +x setup.sh
+          ./setup.sh
+      
+      - name: Create MLX Bundle
+        working-directory: apps/backend/mlx
+        run: |
+          mkdir -p ../../release-artifacts
+          tar -czf ../../release-artifacts/mlx-server-bundle.tar.gz mlx_server.py requirements.txt setup.sh
+      
+      - name: Upload Release Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: mlx-backend-bundle
+          path: release-artifacts/*
+
+  build-diffusion-backend:
+    needs: analyze-changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Create Diffusion Bundle
+        working-directory: apps/backend/diffusion
+        run: |
+          mkdir -p ../../release-artifacts
+          tar -czf ../../release-artifacts/diffusion-server-bundle.tar.gz diffusion_server.py requirements.txt setup.sh
+      
+      - name: Upload Release Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: diffusion-backend-bundle
+          path: release-artifacts/*
+
+  build-ngrok:
+    needs: analyze-changes
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-amd64
+            url: https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
+            ext: tgz
+          - os: ubuntu-latest
+            platform: linux-arm64
+            url: https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz
+            ext: tgz
+          - os: macos-latest
+            platform: darwin-amd64
+            url: https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-darwin-amd64.zip
+            ext: zip
+          - os: macos-latest
+            platform: darwin-arm64
+            url: https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-darwin-arm64.zip
+            ext: zip
+          - os: windows-latest
+            platform: windows-amd64
+            url: https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip
+            ext: zip
+          - os: windows-latest
+            platform: windows-386
+            url: https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-386.zip
+            ext: zip
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download and Package Ngrok
+        run: |
+          mkdir -p release-artifacts
+          curl -L "${{ matrix.url }}" -o ngrok.${{ matrix.ext }}
+          
+          if [ "${{ matrix.ext }}" = "tgz" ]; then
+            tar -xzf ngrok.${{ matrix.ext }}
+          else
+            unzip -q ngrok.${{ matrix.ext }}
+          fi
+          
+          if [[ "${{ matrix.platform }}" == windows-* ]]; then
+            7z a release-artifacts/ngrok-${{ matrix.platform }}.zip ngrok.exe
+          else
+            tar -czf release-artifacts/ngrok-${{ matrix.platform }}.tar.gz ngrok
+          fi
+        shell: bash
+      
+      - name: Upload Release Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ngrok-${{ matrix.platform }}
+          path: release-artifacts/*
+
+  create-release-draft:
+    needs: [analyze-changes, build-toke-cli, build-llama-backend, build-mlx-backend, build-diffusion-backend, build-ngrok]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: release-artifacts
+      
+      - name: Generate Release Notes
+        id: release-notes
+        run: |
+          VERSION="${{ needs.analyze-changes.outputs.version }}"
+          CHANGED_APPS="${{ needs.analyze-changes.outputs.changed-apps }}"
+          
+          # Get commit messages since last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"* %s (%h)" --no-merges)
+          else
+            COMMITS=$(git log $LAST_TAG..HEAD --pretty=format:"* %s (%h)" --no-merges)
+          fi
+          
+          # Create release notes
+          cat > release-notes.md << EOF
+          # Toke v$VERSION
+          
+          ## 📦 Changed Applications
+          
+          The following applications were updated in this release:
+          EOF
+          
+          for app in $CHANGED_APPS; do
+            echo "* \`$app\`" >> release-notes.md
+          done
+          
+          cat >> release-notes.md << EOF
+          
+          ## 🚀 What's Changed
+          
+          $COMMITS
+          
+          ## 📥 Downloads
+          
+          ### Toke CLI (Lightweight - Backends downloaded on first run)
+          - **macOS (Intel)**: \`toke-macOS-x64.tar.gz\`
+          - **macOS (Apple Silicon)**: \`toke-macOS-arm64.tar.gz\`
+          - **Linux (x64)**: \`toke-Linux-x64.tar.gz\`
+          - **Linux (ARM64)**: \`toke-Linux-arm64.tar.gz\`
+          - **Windows (x64)**: \`toke-Windows-x64.zip\`
+          
+          ### Backend Servers (Downloaded automatically by Toke)
+          - **Llama Server**: \`llama-server-<OS>-<ARCH>.tar.gz\` (macOS, Linux)
+          - **MLX Server**: \`mlx-server-bundle.tar.gz\` (macOS Apple Silicon only)
+          - **Diffusion Server**: \`diffusion-server-bundle.tar.gz\` (Python, all platforms)
+          - **Ngrok**: \`ngrok-<OS>-<ARCH>.tar.gz\` (all platforms)
+          
+          > **Note**: Backends are automatically downloaded on first run. If you have local builds in the \`apps/backend/\` directories, Toke will use those instead.
+          
+          ## 📝 Installation
+          
+          ### macOS/Linux
+          \`\`\`bash
+          tar -xzf toke-<OS>-<ARCH>.tar.gz
+          chmod +x toke-<OS>-<ARCH>
+          sudo mv toke-<OS>-<ARCH> /usr/local/bin/toke
+          
+          # Run toke - backends will be downloaded automatically on first run
+          toke
+          \`\`\`
+          
+          ### Managing Dependencies
+          \`\`\`bash
+          # Check dependency status
+          toke deps check
+          
+          # Manually install/update dependencies
+          toke deps install
+          
+          # Check for updates
+          toke deps update
+          \`\`\`
+          
+          ### Windows
+          Extract the ZIP file and add the executable to your PATH.
+          
+          ## 🏗️ Building from Source
+          
+          \`\`\`bash
+          git clone https://github.com/chasedut/toke.git
+          cd toke
+          ./build-local.sh all
+          \`\`\`
+          
+          ---
+          
+          **Full Changelog**: https://github.com/chasedut/toke/compare/$LAST_TAG...v$VERSION
+          EOF
+      
+      - name: Create Draft Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          prerelease: false
+          name: "v${{ needs.analyze-changes.outputs.version }}"
+          tag_name: "v${{ needs.analyze-changes.outputs.version }}"
+          body_path: release-notes.md
+          files: |
+            release-artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Comment on Merged PR
+        uses: actions/github-script@v6
+        with:
+          script: |
+            // Find the most recent merged PR
+            const { data: pulls } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'closed',
+              sort: 'updated',
+              direction: 'desc',
+              per_page: 10
+            });
+            
+            const mergedPR = pulls.find(pr => pr.merged_at && new Date(pr.merged_at) > new Date(Date.now() - 300000));
+            
+            if (mergedPR) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: mergedPR.number,
+                body: `## 🎉 Draft Release Created!\n\nA draft release \`v${{ needs.analyze-changes.outputs.version }}\` has been created with the changes from this PR.\n\n[View Draft Release](https://github.com/${{ github.repository }}/releases)`
+              });
+            }

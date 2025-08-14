@@ -1,0 +1,29 @@
+{
+  "name": "@toke/backend-diffusion",
+  "version": "0.42.4",
+  "private": true,
+  "description": "Diffusion model backend server for Toke",
+  "scripts": {
+    "build": "npm run setup",
+    "setup": "npm run setup:venv:check && npm run setup:deps && npm run setup:requirements:create",
+    "setup:venv:check": "[ ! -d \"diffusion-env\" ] && python3 -m venv diffusion-env || true",
+    "setup:venv": "python3 -m venv diffusion-env",
+    "setup:deps": "source diffusion-env/bin/activate && pip install --upgrade pip && pip install torch torchvision diffusers transformers accelerate fastapi uvicorn pillow",
+    "setup:requirements:create": "echo 'torch\ntorchvision\ndiffusers\ntransformers\naccelerate\nfastapi\nuvicorn\npillow' > requirements.txt",
+    "setup:requirements": "source diffusion-env/bin/activate && pip install -r requirements.txt",
+    "freeze": "source diffusion-env/bin/activate && pip freeze > requirements.txt",
+    "dev": "npm run dev:check && npm run dev:start",
+    "dev:check": "[ -d \"diffusion-env\" ] || (echo '❌ Diffusers not installed. Run npm run setup first.' && exit 1)",
+    "dev:start": "source diffusion-env/bin/activate && echo '🎨 Starting Diffusion server...' && echo '   Port: '${PORT:-8002} && echo '   Model: '${DIFFUSION_MODEL:-runwayml/stable-diffusion-v1-5} && python diffusion_server.py --port ${PORT:-8002} --model ${DIFFUSION_MODEL:-runwayml/stable-diffusion-v1-5} ${DIFFUSION_ARGS}",
+    "dev:reload": "source diffusion-env/bin/activate && uvicorn diffusion_server:app --reload --port 8002",
+    "test": "source diffusion-env/bin/activate && python -m pytest tests/",
+    "test:unit": "source diffusion-env/bin/activate && python -m pytest tests/unit",
+    "test:integration": "source diffusion-env/bin/activate && python -m pytest tests/integration",
+    "lint": "source diffusion-env/bin/activate && pylint diffusion_server.py",
+    "format": "source diffusion-env/bin/activate && black diffusion_server.py",
+    "clean": "rm -rf diffusion-env __pycache__ build dist *.egg-info",
+    "clean:models": "rm -rf models ~/.cache/huggingface/diffusers",
+    "download:model": "source diffusion-env/bin/activate && python -c \"from diffusers import StableDiffusionPipeline; StableDiffusionPipeline.from_pretrained('runwayml/stable-diffusion-v1-5')\"",
+    "generate:test": "source diffusion-env/bin/activate && python -c \"import requests; r=requests.post('http://localhost:8002/generate', json={'prompt':'a cat'}); print(r.status_code)\""
+  }
+}

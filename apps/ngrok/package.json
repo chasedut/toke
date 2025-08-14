@@ -1,0 +1,33 @@
+{
+  "name": "@toke/ngrok",
+  "version": "0.42.4",
+  "private": true,
+  "description": "Ngrok tunnel service for Toke",
+  "scripts": {
+    "build": "npm install",
+    "postinstall": "node -e \"console.log('Ngrok tunnel service ready')\"",
+    "dev": "node ngrok-tunnel.js",
+    "start": "node ngrok-tunnel.js",
+    "tunnel:toke": "PORT=3000 node ngrok-tunnel.js",
+    "tunnel:llama": "PORT=8080 node ngrok-tunnel.js",
+    "tunnel:mlx": "PORT=8001 node ngrok-tunnel.js",
+    "tunnel:diffusion": "PORT=8002 node ngrok-tunnel.js",
+    "tunnel:tauri": "PORT=1420 node ngrok-tunnel.js",
+    "tunnel:custom": "node ngrok-tunnel.js",
+    "config": "npx ngrok config check",
+    "authtoken": "npx ngrok config add-authtoken",
+    "test": "node -c ngrok-tunnel.js && node -e \"require('ngrok').kill()\"",
+    "lint": "eslint ngrok-tunnel.js",
+    "format": "prettier --write ngrok-tunnel.js",
+    "clean": "rm -rf node_modules package-lock.json",
+    "info": "npx ngrok version && npx ngrok config check"
+  },
+  "dependencies": {
+    "ngrok": "^5.0.0",
+    "dotenv": "^16.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.0.0",
+    "prettier": "^3.0.0"
+  }
+}

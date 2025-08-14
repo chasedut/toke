@@ -1,0 +1,122 @@
+{
+  "version": "0.42.4",
+  "updated_at": "2024-08-14T00:00:00Z",
+  "dependencies": [
+    {
+      "name": "llama",
+      "version": "1.0.0",
+      "description": "Llama.cpp server for local LLM inference",
+      "platforms": {
+        "darwin-arm64": {
+          "url": "https://github.com/chasedut/toke/releases/download/v0.42.4/llama-server-darwin-arm64.tar.gz",
+          "size": 4830848,
+          "executable": "llama-server",
+          "sha256": ""
+        },
+        "darwin-amd64": {
+          "url": "https://github.com/chasedut/toke/releases/download/v0.42.4/llama-server-darwin-amd64.tar.gz",
+          "size": 4830848,
+          "executable": "llama-server",
+          "sha256": ""
+        },
+        "linux-amd64": {
+          "url": "https://github.com/chasedut/toke/releases/download/v0.42.4/llama-server-linux-amd64.tar.gz",
+          "size": 4830848,
+          "executable": "llama-server",
+          "sha256": ""
+        },
+        "linux-arm64": {
+          "url": "https://github.com/chasedut/toke/releases/download/v0.42.4/llama-server-linux-arm64.tar.gz",
+          "size": 4830848,
+          "executable": "llama-server",
+          "sha256": ""
+        },
+        "windows-amd64": {
+          "url": "https://github.com/chasedut/toke/releases/download/v0.42.4/llama-server-windows-amd64.zip",
+          "size": 4830848,
+          "executable": "llama-server.exe",
+          "sha256": ""
+        },
+        "windows-386": {
+          "url": "https://github.com/chasedut/toke/releases/download/v0.42.4/llama-server-windows-386.zip",
+          "size": 4830848,
+          "executable": "llama-server.exe",
+          "sha256": ""
+        }
+      },
+      "required": true
+    },
+    {
+      "name": "mlx",
+      "version": "1.0.0",
+      "description": "MLX server for Apple Silicon optimized inference",
+      "platforms": {
+        "darwin-arm64": {
+          "url": "https://github.com/chasedut/toke/releases/download/v0.42.4/mlx-server-bundle.tar.gz",
+          "size": 2097152,
+          "executable": "mlx_server.py",
+          "sha256": ""
+        }
+      },
+      "required": false
+    },
+    {
+      "name": "diffusion",
+      "version": "1.0.0",
+      "description": "Stable Diffusion server for image generation",
+      "platforms": {
+        "all": {
+          "url": "https://github.com/chasedut/toke/releases/download/v0.42.4/diffusion-server-bundle.tar.gz",
+          "size": 1048576,
+          "executable": "diffusion_server.py",
+          "sha256": ""
+        }
+      },
+      "required": false
+    },
+    {
+      "name": "ngrok",
+      "version": "1.0.0",
+      "description": "Ngrok tunnel service for remote access",
+      "platforms": {
+        "darwin-arm64": {
+          "url": "https://github.com/chasedut/toke/releases/download/v0.42.4/ngrok-darwin-arm64.tar.gz",
+          "size": 8388608,
+          "executable": "ngrok",
+          "sha256": ""
+        },
+        "darwin-amd64": {
+          "url": "https://github.com/chasedut/toke/releases/download/v0.42.4/ngrok-darwin-amd64.tar.gz",
+          "size": 8388608,
+          "executable": "ngrok",
+          "sha256": ""
+        },
+        "linux-amd64": {
+          "url": "https://github.com/chasedut/toke/releases/download/v0.42.4/ngrok-linux-amd64.tar.gz",
+          "size": 8388608,
+          "executable": "ngrok",
+          "sha256": ""
+        },
+        "linux-arm64": {
+          "url": "https://github.com/chasedut/toke/releases/download/v0.42.4/ngrok-linux-arm64.tar.gz",
+          "size": 8388608,
+          "executable": "ngrok",
+          "sha256": ""
+        },
+        "windows-amd64": {
+          "url": "https://github.com/chasedut/toke/releases/download/v0.42.4/ngrok-windows-amd64.zip",
+          "size": 8388608,
+          "executable": "ngrok.exe",
+          "sha256": ""
+        },
+        "windows-386": {
+          "url": "https://github.com/chasedut/toke/releases/download/v0.42.4/ngrok-windows-386.zip",
+          "size": 8388608,
+          "executable": "ngrok.exe",
+          "sha256": ""
+        }
+      },
+      "required": false
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "name": "toke",
+  "version": "1.0.0",
+  "description": "<p align=\"center\">     <img width=\"600\" alt=\"Toke Logo\" src=\"assets/toke-logo.png\" /><br />     <a href=\"https://github.com/chasedut/toke/releases\"><img src=\"https://img.shields.io/github/release/chasedut/toke\" alt=\"Latest Release\"></a>     <a href=\"https://github.com/chasedut/toke/actions\"><img src=\"https://github.com/chasedut/toke/workflows/build/badge.svg\" alt=\"Build Status\"></a> </p>",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "workspaces": [
+    "apps/*",
+    "apps/backend/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "build:bundle": "./build.sh",
+    "build:archive": "./build.sh --archive",
+    "build:app": "./build.sh --app",
+    "build:all": "./build.sh --archive --app",
+    "dev": "turbo run dev --parallel",
+    "start": "cd build/toke-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/') && ./toke",
+    "start:built": "cd build/toke-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/') && ./toke",
+    "test": "turbo run test",
+    "clean": "turbo run clean && rm -rf build dist",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "download:ngrok": "mkdir -p build && curl -L https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/').zip -o build/ngrok.zip && unzip -o build/ngrok.zip -d build/ && rm build/ngrok.zip",
+    "setup": "turbo run setup",
+    "install:local": "turbo run install:local"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chasedut/toke.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/chasedut/toke/issues"
+  },
+  "homepage": "https://github.com/chasedut/toke#readme",
+  "devDependencies": {
+    "turbo": "^2.5.5"
+  }
+}

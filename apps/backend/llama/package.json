@@ -1,0 +1,20 @@
+{
+  "name": "@toke/backend-llama",
+  "version": "0.42.4",
+  "private": true,
+  "description": "Llama backend server for Toke",
+  "scripts": {
+    "build": "./build.sh",
+    "build:local": "./build.sh",
+    "clone": "git clone https://github.com/ggerganov/llama.cpp.git",
+    "update": "cd llama.cpp && git pull",
+    "compile": "cd llama.cpp && make clean && make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu) llama-server",
+    "build:fresh": "rm -rf llama.cpp && npm run clone && npm run compile",
+    "dev": "./run-server.sh",
+    "dev:debug": "LLAMA_DEBUG=1 ./run-server.sh",
+    "test": "curl -s http://localhost:8080/health | grep -q 'ok'",
+    "clean": "rm -rf build dist llama-server* llama.cpp",
+    "clean:cache": "rm -rf ~/.cache/llama-models",
+    "download:model": "mkdir -p models && curl -L -o models/llama-2-7b-chat.Q4_K_M.gguf https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGUF/resolve/main/llama-2-7b-chat.Q4_K_M.gguf"
+  }
+}

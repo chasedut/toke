@@ -1,0 +1,147 @@
+name: Publish Backend Manifest
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  update-manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Get Release Info
+        id: release
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            RELEASE_ID="${{ github.event.release.id }}"
+          else
+            # Get latest release for manual trigger
+            RELEASE_JSON=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest)
+            VERSION=$(echo $RELEASE_JSON | jq -r '.tag_name')
+            RELEASE_ID=$(echo $RELEASE_JSON | jq -r '.id')
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
+      
+      - name: Generate Manifest
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          
+          # Get release assets
+          ASSETS=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/${{ steps.release.outputs.release_id }}/assets)
+          
+          # Create manifest JSON
+          cat > backends-manifest.json << EOF
+          {
+            "version": "$VERSION",
+            "updated_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "dependencies": []
+          }
+          EOF
+          
+          # Parse assets and update manifest
+          python3 << 'PYTHON'
+          import json
+          import re
+          
+          with open('backends-manifest.json', 'r') as f:
+              manifest = json.load(f)
+          
+          assets_json = '''$ASSETS'''
+          assets = json.loads(assets_json) if assets_json else []
+          
+          deps = {
+              'llama': {
+                  'name': 'llama',
+                  'description': 'Llama.cpp server for local LLM inference',
+                  'executable': 'llama-server',
+                  'required': True,
+                  'pattern': r'llama-server-(.+)\.tar\.gz'
+              },
+              'mlx': {
+                  'name': 'mlx',
+                  'description': 'MLX server for Apple Silicon optimized inference',
+                  'executable': 'mlx_server.py',
+                  'required': False,
+                  'pattern': r'mlx-server-bundle\.tar\.gz'
+              },
+              'diffusion': {
+                  'name': 'diffusion',
+                  'description': 'Stable Diffusion server for image generation',
+                  'executable': 'diffusion_server.py',
+                  'required': False,
+                  'pattern': r'diffusion-server-bundle\.tar\.gz'
+              },
+              'ngrok': {
+                  'name': 'ngrok',
+                  'description': 'Ngrok tunnel service for remote access',
+                  'executable': 'ngrok',
+                  'required': False,
+                  'pattern': r'ngrok-(.+)\.(tar\.gz|zip)'
+              }
+          }
+          
+          processed_deps = {}
+          
+          for asset in assets:
+              name = asset['name']
+              url = asset['browser_download_url']
+              size = asset['size']
+              
+              for dep_key, dep_info in deps.items():
+                  match = re.match(dep_info['pattern'], name)
+                  if match:
+                      if dep_key not in processed_deps:
+                          processed_deps[dep_key] = {
+                              'name': dep_info['name'],
+                              'version': '$VERSION',
+                              'description': dep_info['description'],
+                              'executable': dep_info['executable'],
+                              'required': dep_info['required'],
+                              'assets': []
+                          }
+                      
+                      platform = match.group(1) if len(match.groups()) > 0 else 'all'
+                      processed_deps[dep_key]['assets'].append({
+                          'platform': platform,
+                          'url': url,
+                          'size': size
+                      })
+          
+          manifest['dependencies'] = list(processed_deps.values())
+          
+          with open('backends-manifest.json', 'w') as f:
+              json.dump(manifest, f, indent=2)
+          PYTHON
+      
+      - name: Upload Manifest as Release Asset
+        run: |
+          # Upload the manifest to the release
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --data @backends-manifest.json \
+            "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ steps.release.outputs.release_id }}/assets?name=backends-manifest.json"
+      
+      - name: Update README with Latest Version
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          
+          # Update version badges in README if it exists
+          if [ -f "README.md" ]; then
+            sed -i "s/v[0-9]*\.[0-9]*\.[0-9]*/$VERSION/g" README.md
+            
+            # Commit and push if changes were made
+            if git diff --quiet; then
+              echo "No changes to README.md"
+            else
+              git config user.name "GitHub Actions"
+              git config user.email "actions@github.com"
+              git add README.md
+              git commit -m "Update version to $VERSION in README"
+              git push
+            fi
+          fi

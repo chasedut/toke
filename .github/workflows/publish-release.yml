@@ -1,0 +1,141 @@
+name: Publish Draft Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to publish (e.g., v1.0.0)'
+        required: true
+        type: string
+      update_latest:
+        description: 'Update "latest" tag for auto-updates'
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Find draft release
+      id: find_release
+      run: |
+        # Find the draft release with the specified tag
+        RELEASE_ID=$(gh api \
+          -H "Accept: application/vnd.github+json" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          /repos/${{ github.repository }}/releases \
+          --jq ".[] | select(.tag_name == \"${{ github.event.inputs.release_tag }}\" and .draft == true) | .id" \
+          | head -1)
+        
+        if [ -z "$RELEASE_ID" ]; then
+          echo "❌ No draft release found with tag: ${{ github.event.inputs.release_tag }}"
+          echo "Available draft releases:"
+          gh release list --draft
+          exit 1
+        fi
+        
+        echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
+        echo "✅ Found draft release ID: $RELEASE_ID"
+      env:
+        GH_TOKEN: ${{ github.token }}
+    
+    - name: Publish release
+      run: |
+        echo "Publishing release ${{ github.event.inputs.release_tag }}..."
+        
+        # Publish the draft release
+        gh api \
+          --method PATCH \
+          -H "Accept: application/vnd.github+json" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          /repos/${{ github.repository }}/releases/${{ steps.find_release.outputs.release_id }} \
+          -f draft=false \
+          -f prerelease=false
+        
+        echo "✅ Release published!"
+      env:
+        GH_TOKEN: ${{ github.token }}
+    
+    - name: Update latest tag
+      if: github.event.inputs.update_latest == 'true'
+      run: |
+        echo "Updating 'latest' tag to point to ${{ github.event.inputs.release_tag }}..."
+        
+        # Delete existing latest tag if it exists
+        git push origin :refs/tags/latest 2>/dev/null || true
+        
+        # Create new latest tag pointing to the release tag
+        git tag -f latest ${{ github.event.inputs.release_tag }}
+        git push origin latest --force
+        
+        echo "✅ 'latest' tag updated"
+      env:
+        GH_TOKEN: ${{ github.token }}
+    
+    - name: Create Tauri update JSON
+      if: github.event.inputs.update_latest == 'true'
+      run: |
+        # Get release information
+        RELEASE_INFO=$(gh api \
+          -H "Accept: application/vnd.github+json" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          /repos/${{ github.repository }}/releases/${{ steps.find_release.outputs.release_id }})
+        
+        VERSION=$(echo "$RELEASE_INFO" | jq -r '.tag_name' | sed 's/^v//')
+        NOTES=$(echo "$RELEASE_INFO" | jq -r '.body')
+        PUB_DATE=$(echo "$RELEASE_INFO" | jq -r '.published_at')
+        
+        # Find the Darwin aarch64 assets
+        DMG_URL=$(echo "$RELEASE_INFO" | jq -r '.assets[] | select(.name | contains(".dmg")) | .browser_download_url' | head -1)
+        SIG_URL=$(echo "$RELEASE_INFO" | jq -r '.assets[] | select(.name | contains(".dmg.sig")) | .browser_download_url' | head -1)
+        
+        if [ -n "$DMG_URL" ]; then
+          # Create update.json for Tauri auto-updater
+          cat > update.json << EOF
+        {
+          "version": "$VERSION",
+          "notes": $(echo "$NOTES" | jq -Rs .),
+          "pub_date": "$PUB_DATE",
+          "platforms": {
+            "darwin-aarch64": {
+              "signature": "$([ -n "$SIG_URL" ] && curl -sL "$SIG_URL" || echo "")",
+              "url": "$DMG_URL"
+            }
+          }
+        }
+        EOF
+          
+          echo "Created update.json for Tauri auto-updater"
+          cat update.json
+          
+          # TODO: Upload update.json to your update server
+          # For now, you can manually upload this to your CDN/server
+        fi
+      env:
+        GH_TOKEN: ${{ github.token }}
+    
+    - name: Summary
+      if: always()
+      run: |
+        cat >> $GITHUB_STEP_SUMMARY << EOF
+        ## 🚀 Release Published
+        
+        **Version:** \`${{ github.event.inputs.release_tag }}\`
+        **Latest tag updated:** ${{ github.event.inputs.update_latest }}
+        
+        ### 📦 Release is now live!
+        - Users can download from: [Release page](https://github.com/${{ github.repository }}/releases/tag/${{ github.event.inputs.release_tag }})
+        - Auto-updating apps will see the update (if latest tag was updated)
+        
+        ### 📊 Next Steps
+        - Monitor for user feedback
+        - Check download statistics
+        - Watch for any issues reported
+        EOF

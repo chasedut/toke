@@ -34,7 +34,7 @@ Get the native desktop experience with our Tauri app:
 ./scripts/build-tauri-app.sh
 
 # Find your app at:
-# macOS: toke-tauri/src-tauri/target/release/bundle/macos/Toke.app
+# macOS (Apple Silicon): toke-tauri/src-tauri/target/release/bundle/macos/Toke.app
 # DMG: toke-tauri/src-tauri/target/release/bundle/dmg/Toke_0.1.0_aarch64.dmg
 ```
 
