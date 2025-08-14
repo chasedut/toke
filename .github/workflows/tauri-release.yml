@@ -55,20 +55,31 @@ jobs:
         run: |
           go build -o build/toke-${{ runner.os }}-${{ runner.arch }}/toke .
 
-      - name: Update Tauri version from VERSION file
+      - name: Get VERSION
+        id: get_version
+        shell: bash
         run: |
           VERSION=$(cat VERSION)
-          echo "Updating tauri.conf.json to version $VERSION"
-          
-          # Update version in tauri.conf.json
-          if [[ "$RUNNER_OS" == "macOS" ]]; then
-            sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" toke-tauri/src-tauri/tauri.conf.json
-          else
-            sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" toke-tauri/src-tauri/tauri.conf.json
-          fi
-          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Update Tauri version (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          sed -i '' "s/\"version\": \".*\"/\"version\": \"${{ steps.get_version.outputs.version }}\"/" toke-tauri/src-tauri/tauri.conf.json
           echo "Updated tauri.conf.json:"
           grep '"version"' toke-tauri/src-tauri/tauri.conf.json
+
+      - name: Update Tauri version (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = "${{ steps.get_version.outputs.version }}"
+          $content = Get-Content toke-tauri/src-tauri/tauri.conf.json -Raw
+          $content = $content -replace '"version": ".*?"', "`"version`": `"$version`""
+          Set-Content -Path toke-tauri/src-tauri/tauri.conf.json -Value $content
+          Write-Host "Updated tauri.conf.json:"
+          Select-String -Path toke-tauri/src-tauri/tauri.conf.json -Pattern '"version"'
 
       - name: Install Tauri dependencies
         working-directory: ./toke-tauri
