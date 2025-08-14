@@ -25,10 +25,6 @@ jobs:
         include:
           - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
-          - platform: 'macos-latest'
-            args: '--target x86_64-apple-darwin'
-          - platform: 'windows-latest'
-            args: ''
 
     runs-on: ${{ matrix.platform }}
 
@@ -43,7 +39,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
 
 
       - name: Setup Go
@@ -54,27 +50,8 @@ jobs:
       - name: Build toke binary (macOS)
         if: runner.os == 'macOS'
         run: |
-          # runner.arch returns ARM64 or X64, we need arm64 or amd64
-          ARCH_NAME="${{ runner.arch }}"
-          if [[ "$ARCH_NAME" == "ARM64" ]]; then
-            ARCH_NAME="arm64"
-          elif [[ "$ARCH_NAME" == "X64" ]]; then
-            ARCH_NAME="amd64"
-          fi
-          echo "Building toke binary to build/toke-darwin-${ARCH_NAME}/toke"
-          go build -o "build/toke-darwin-${ARCH_NAME}/toke" .
-
-      - name: Build toke binary (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          # runner.arch returns X64, we need amd64
-          $archName = "${{ runner.arch }}"
-          if ($archName -eq "X64") {
-            $archName = "amd64"
-          }
-          Write-Host "Building toke binary to build/toke-windows-$archName/toke.exe"
-          go build -o "build/toke-windows-$archName/toke.exe" .
+          echo "Building toke binary to build/toke-darwin-arm64/toke"
+          go build -o "build/toke-darwin-arm64/toke" .
 
       - name: Get VERSION
         id: get_version
@@ -90,17 +67,6 @@ jobs:
           sed -i '' "s/\"version\": \".*\"/\"version\": \"${{ steps.get_version.outputs.version }}\"/" toke-tauri/src-tauri/tauri.conf.json
           echo "Updated tauri.conf.json:"
           grep '"version"' toke-tauri/src-tauri/tauri.conf.json
-
-      - name: Update Tauri version (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $version = "${{ steps.get_version.outputs.version }}"
-          $content = Get-Content toke-tauri/src-tauri/tauri.conf.json -Raw
-          $content = $content -replace '"version": ".*?"', "`"version`": `"$version`""
-          Set-Content -Path toke-tauri/src-tauri/tauri.conf.json -Value $content
-          Write-Host "Updated tauri.conf.json:"
-          Select-String -Path toke-tauri/src-tauri/tauri.conf.json -Pattern '"version"'
 
       - name: Install Tauri dependencies
         working-directory: ./toke-tauri
@@ -125,12 +91,6 @@ jobs:
             toke-tauri/src-tauri/target/release/bundle/dmg/*.dmg
             toke-tauri/src-tauri/target/release/bundle/macos/*.app.tar.gz
             toke-tauri/src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
-            toke-tauri/src-tauri/target/release/bundle/msi/*.msi
-            toke-tauri/src-tauri/target/release/bundle/msi/*.msi.zip
-            toke-tauri/src-tauri/target/release/bundle/msi/*.msi.zip.sig
-            toke-tauri/src-tauri/target/release/bundle/nsis/*.exe
-            toke-tauri/src-tauri/target/release/bundle/nsis/*.nsis.zip
-            toke-tauri/src-tauri/target/release/bundle/nsis/*.nsis.zip.sig
 
   release:
     needs: build-tauri
@@ -174,17 +134,10 @@ jobs:
             
             ### Downloads
             - **macOS**: Download the `.dmg` file for macOS
-            - **Windows**: Download the `.msi` or `.exe` installer
           files: |
             toke-tauri-*/**/*.dmg
             toke-tauri-*/**/*.app.tar.gz
             toke-tauri-*/**/*.app.tar.gz.sig
-            toke-tauri-*/**/*.msi
-            toke-tauri-*/**/*.msi.zip
-            toke-tauri-*/**/*.msi.zip.sig
-            toke-tauri-*/**/*.exe
-            toke-tauri-*/**/*.nsis.zip
-            toke-tauri-*/**/*.nsis.zip.sig
             toke-tauri-*/**/latest.json
           draft: false
           prerelease: false

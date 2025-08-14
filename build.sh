@@ -28,7 +28,9 @@ mkdir -p build/toke-${PLATFORM}/backends
 
 # Build main toke binary
 echo -e "${GREEN}Building main Toke binary...${NC}"
-go build -ldflags="-s -w" -o build/toke-${PLATFORM}/toke main.go
+cd apps/toke
+go build -ldflags="-s -w" -o ../../build/toke-${PLATFORM}/toke .
+cd ../..
 
 # Build or copy llama-server
 echo -e "${GREEN}Preparing llama-server backend...${NC}"
@@ -39,15 +41,35 @@ elif [ -f "build-llama-server/llama-server" ]; then
     cp "build-llama-server/llama-server" "build/toke-${PLATFORM}/backends/llama-server"
     echo "  Using existing llama-server binary"
 else
-    echo -e "${YELLOW}  llama-server not found, building...${NC}"
-    ./scripts/build-llama-server.sh
-    if [ -f "build-llama-server/llama-server-${PLATFORM}" ]; then
-        cp "build-llama-server/llama-server-${PLATFORM}" "build/toke-${PLATFORM}/backends/llama-server"
-    elif [ -f "build-llama-server/llama-server" ]; then
-        cp "build-llama-server/llama-server" "build/toke-${PLATFORM}/backends/llama-server"
+    echo -e "${YELLOW}  llama-server not found, checking apps/backend/llama...${NC}"
+    # First check for pre-built platform-specific binary
+    if [ -f "apps/backend/llama/llama-server-${PLATFORM}" ]; then
+        cp "apps/backend/llama/llama-server-${PLATFORM}" "build/toke-${PLATFORM}/backends/llama-server"
+        echo "  Using pre-built llama-server-${PLATFORM}"
+    elif [ -f "apps/backend/llama/llama-server" ]; then
+        cp "apps/backend/llama/llama-server" "build/toke-${PLATFORM}/backends/llama-server"
+        echo "  Using llama-server from apps/backend/llama"
+    elif [ -f "apps/backend/llama/llama.cpp/llama-server" ]; then
+        cp "apps/backend/llama/llama.cpp/llama-server" "build/toke-${PLATFORM}/backends/llama-server"
+        echo "  Using llama-server from llama.cpp build"
     else
-        echo -e "${RED}  Failed to build llama-server${NC}"
-        exit 1
+        echo -e "${YELLOW}  Pre-built llama-server not found, trying to build...${NC}"
+        cd apps/backend/llama
+        if [ -f "package.json" ]; then
+            npm run build 2>/dev/null || echo -e "${YELLOW}  Build failed or not configured${NC}"
+        fi
+        cd ../../..
+        # Check again after build attempt
+        if [ -f "apps/backend/llama/llama-server-${PLATFORM}" ]; then
+            cp "apps/backend/llama/llama-server-${PLATFORM}" "build/toke-${PLATFORM}/backends/llama-server"
+            echo "  Built and copied llama-server"
+        elif [ -f "apps/backend/llama/llama-server" ] || [ -f "apps/backend/llama/llama.cpp/llama-server" ]; then
+            [ -f "apps/backend/llama/llama-server" ] && cp "apps/backend/llama/llama-server" "build/toke-${PLATFORM}/backends/llama-server"
+            [ -f "apps/backend/llama/llama.cpp/llama-server" ] && cp "apps/backend/llama/llama.cpp/llama-server" "build/toke-${PLATFORM}/backends/llama-server"
+            echo "  Built and copied llama-server"
+        else
+            echo -e "${YELLOW}  Continuing without llama-server backend${NC}"
+        fi
     fi
 fi
 
@@ -61,15 +83,30 @@ if [ "$OS" = "darwin" ] && [ "$ARCH" = "arm64" ]; then
         cp -r "build-mlx-server/output/"* "build/toke-${PLATFORM}/backends/"
         echo "  Using existing MLX server"
     else
-        echo -e "${YELLOW}  MLX server not found, building...${NC}"
-        ./scripts/build-mlx-server.sh
-        if [ -f "build-mlx-server/mlx-server-darwin-arm64.tar.gz" ]; then
-            tar -xzf "build-mlx-server/mlx-server-darwin-arm64.tar.gz" -C "build/toke-${PLATFORM}/backends/"
-        elif [ -d "build-mlx-server/output" ]; then
-            cp -r "build-mlx-server/output/"* "build/toke-${PLATFORM}/backends/"
+        echo -e "${YELLOW}  MLX server not found, checking apps/backend/mlx...${NC}"
+        if [ -d "apps/backend/mlx/mlx-env" ]; then
+            echo "  Found MLX virtual environment"
+            cp -r "apps/backend/mlx/mlx-env" "build/toke-${PLATFORM}/backends/"
+            [ -f "apps/backend/mlx/mlx-server" ] && cp "apps/backend/mlx/mlx-server" "build/toke-${PLATFORM}/backends/"
+            [ -f "apps/backend/mlx/mlx_server.py" ] && cp "apps/backend/mlx/mlx_server.py" "build/toke-${PLATFORM}/backends/"
+            [ -f "apps/backend/mlx/requirements.txt" ] && cp "apps/backend/mlx/requirements.txt" "build/toke-${PLATFORM}/backends/"
+            echo "  Copied MLX backend files"
         else
-            echo -e "${RED}  Failed to build MLX server${NC}"
-            exit 1
+            echo -e "${YELLOW}  MLX environment not found, trying to set up...${NC}"
+            cd apps/backend/mlx
+            if [ -f "package.json" ]; then
+                npm run setup 2>/dev/null || echo -e "${YELLOW}  Setup failed or not configured${NC}"
+            fi
+            cd ../../..
+            if [ -d "apps/backend/mlx/mlx-env" ]; then
+                cp -r "apps/backend/mlx/mlx-env" "build/toke-${PLATFORM}/backends/"
+                [ -f "apps/backend/mlx/mlx-server" ] && cp "apps/backend/mlx/mlx-server" "build/toke-${PLATFORM}/backends/"
+                [ -f "apps/backend/mlx/mlx_server.py" ] && cp "apps/backend/mlx/mlx_server.py" "build/toke-${PLATFORM}/backends/"
+                [ -f "apps/backend/mlx/requirements.txt" ] && cp "apps/backend/mlx/requirements.txt" "build/toke-${PLATFORM}/backends/"
+                echo "  Set up and copied MLX backend"
+            else
+                echo -e "${YELLOW}  Continuing without MLX backend${NC}"
+            fi
         fi
     fi
 fi

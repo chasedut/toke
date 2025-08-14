@@ -38,15 +38,13 @@ Thumbs.db
 /bin/
 /dist/
 /build/
+build-*/
 
 # Local environment variables
 .env
 .env.local
 
 **/.toke/**
-
-/toke
-build/Toke.app/
 
 manpages/
 completions/
@@ -58,8 +56,52 @@ toke-tauri/dist/
 toke-tauri/src-tauri/target/
 toke-tauri/src-tauri/gen/
 
-# Build artifacts from scripts
-build-llama-server/
-build-mlx-server/
-build-ngrok/
+# Node modules
+node_modules/
+.turbo/
+
+# App-specific build directories
+apps/toke/build/
+apps/toke/dist/
+apps/backend/*/build/
+apps/backend/*/dist/
+apps/backend/*/*.tar.gz
+apps/backend/*/*.zip
+apps/backend/*/llama.cpp/
+apps/backend/mlx/mlx-env/
+apps/backend/mlx/output/
+apps/backend/mlx/__pycache__/
+apps/backend/mlx/*.egg-info/
+apps/backend/diffusion/diffusion-env/
+apps/backend/diffusion/__pycache__/
+apps/backend/diffusion/*.egg-info/
+apps/backend/llama/llama-server
+apps/backend/llama/llama-server-*
+!apps/backend/llama/llama-server-*.gz
+apps/tauri/dist/
+apps/tauri/target/
+apps/ngrok/node_modules/
+
+# Root level build artifacts
+/ngrok
+/toke
+/toke-*
+
+# Python virtual environments
+**/venv/
+**/*-env/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.Python
+*.egg-info/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+*~
 

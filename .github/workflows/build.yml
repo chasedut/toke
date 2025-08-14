@@ -27,7 +27,7 @@ jobs:
         version: v1.64.3
 
   build:
-    needs: test
+    needs: [test, build-mlx-server]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -36,14 +36,6 @@ jobs:
             goos: darwin
             goarch: arm64
             suffix: -darwin-arm64
-          - os: macos-13  # Intel Mac
-            goos: darwin
-            goarch: amd64
-            suffix: -darwin-amd64
-          - os: windows-latest
-            goos: windows
-            goarch: amd64
-            suffix: -windows-amd64.exe
     
     steps:
     - uses: actions/checkout@v4
@@ -53,18 +45,75 @@ jobs:
       with:
         go-version: '1.24'
     
-    - name: Build
+    - name: Download MLX server bundle
+      uses: actions/download-artifact@v4
+      with:
+        name: mlx-server-darwin-arm64
+        path: ./mlx-bundle
+    
+    - name: Build llama-server
+      run: |
+        # Clone and build llama.cpp
+        git clone https://github.com/ggerganov/llama.cpp.git
+        cd llama.cpp
+        mkdir build
+        cd build
+        cmake .. -DLLAMA_METAL=ON -DLLAMA_SERVER_SSL=OFF
+        cmake --build . --config Release --target llama-server
+        cd ../..
+        
+        # Create backends directory
+        mkdir -p backends
+        cp llama.cpp/build/bin/llama-server backends/
+        chmod +x backends/llama-server
+    
+    - name: Extract MLX server
+      run: |
+        # Extract MLX server bundle
+        tar -xzf mlx-bundle/mlx-server-darwin-arm64.tar.gz -C backends/
+        
+        # Verify backends are in place
+        echo "Backends directory contents:"
+        ls -la backends/
+    
+    - name: Prepare embedded backends
+      run: |
+        # Create embedded backends directory structure
+        mkdir -p internal/backend/embedded_backends
+        
+        # Copy backends from build
+        cp -r backends/* internal/backend/embedded_backends/ || true
+        
+        # Compress backends for embedding if script exists
+        if [ -f scripts/compress-backends.sh ]; then
+          chmod +x scripts/compress-backends.sh
+          scripts/compress-backends.sh
+        fi
+    
+    - name: Build with embedded backends
       env:
         GOOS: ${{ matrix.goos }}
         GOARCH: ${{ matrix.goarch }}
       run: |
-        go build -o toke${{ matrix.suffix }} -ldflags "-X main.Version=${{ github.ref_name }}" .
+        # Try to build with embedded tag, fall back to regular build if it fails
+        if [ -d internal/backend/embedded_backends ] && [ "$(ls -A internal/backend/embedded_backends)" ]; then
+          echo "Building with embedded backends..."
+          go build -tags embedded -o toke${{ matrix.suffix }} -ldflags "-X main.Version=${{ github.ref_name }}" .
+        else
+          echo "Building without embedded backends..."
+          go build -o toke${{ matrix.suffix }} -ldflags "-X main.Version=${{ github.ref_name }}" .
+        fi
+    
+    - name: Create distribution package
+      run: |
+        # Create a tar.gz with just the toke binary (backends are embedded)
+        tar -czf toke${{ matrix.suffix }}.tar.gz toke${{ matrix.suffix }}
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: toke${{ matrix.suffix }}
-        path: toke${{ matrix.suffix }}
+        path: toke${{ matrix.suffix }}.tar.gz
         retention-days: 1
 
   build-mlx-server:
@@ -77,10 +126,16 @@ jobs:
       with:
         python-version: '3.11'
     
-    - name: Build MLX server bundle
+    - name: Install Nuitka (optional optimization)
       run: |
-        chmod +x scripts/build-mlx-server.sh
-        scripts/build-mlx-server.sh
+        pip install nuitka
+      continue-on-error: true
+    
+    - name: Build optimized MLX server bundle
+      run: |
+        chmod +x scripts/build-mlx-server-optimized.sh
+        # Will use Nuitka if available, otherwise Python
+        scripts/build-mlx-server-optimized.sh
     
     - name: Upload MLX server bundle
       uses: actions/upload-artifact@v4
@@ -132,6 +187,7 @@ jobs:
         fi
 
   build-tauri-app:
+    needs: [build-mlx-server, test-llama-server]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -139,9 +195,6 @@ jobs:
           - os: macos-14  # M1 runner
             target: aarch64-apple-darwin
             arch: arm64
-          - os: macos-13  # Intel Mac
-            target: x86_64-apple-darwin
-            arch: amd64
     
     steps:
     - uses: actions/checkout@v4
@@ -161,10 +214,49 @@ jobs:
       with:
         go-version: '1.24'
     
-    - name: Build toke binary for Tauri
+    - name: Download MLX server bundle
+      uses: actions/download-artifact@v4
+      with:
+        name: mlx-server-darwin-arm64
+        path: ./mlx-bundle
+    
+    - name: Build llama-server
       run: |
-        go build -o build/toke-darwin-${{ matrix.arch }}/toke .
-        echo "Built toke binary at build/toke-darwin-${{ matrix.arch }}/toke"
+        # Clone and build llama.cpp
+        git clone https://github.com/ggerganov/llama.cpp.git
+        cd llama.cpp
+        mkdir build
+        cd build
+        cmake .. -DLLAMA_METAL=ON -DLLAMA_SERVER_SSL=OFF
+        cmake --build . --config Release --target llama-server
+        cd ../..
+        
+        # Copy llama-server to backends
+        mkdir -p build/toke-darwin-${{ matrix.arch }}/backends
+        cp llama.cpp/build/bin/llama-server build/toke-darwin-${{ matrix.arch }}/backends/
+        chmod +x build/toke-darwin-${{ matrix.arch }}/backends/llama-server
+    
+    - name: Extract and setup MLX server
+      run: |
+        # Extract MLX server bundle
+        tar -xzf mlx-bundle/mlx-server-darwin-arm64.tar.gz -C build/toke-darwin-${{ matrix.arch }}/backends/
+        
+        # Verify backends are in place
+        echo "Backends directory contents:"
+        ls -la build/toke-darwin-${{ matrix.arch }}/backends/
+    
+    - name: Prepare embedded backends for Tauri
+      run: |
+        # Copy backends to build directory
+        cp -r build/toke-darwin-${{ matrix.arch }}/backends backends/
+        # Compress backends for embedding
+        chmod +x scripts/compress-backends.sh
+        scripts/compress-backends.sh
+    
+    - name: Build toke binary for Tauri with embedded backends
+      run: |
+        go build -tags embedded -o build/toke-darwin-${{ matrix.arch }}/toke .
+        echo "Built toke binary with embedded backends at build/toke-darwin-${{ matrix.arch }}/toke"
     
     - name: Get VERSION
       id: get_version
@@ -244,8 +336,10 @@ jobs:
         ./ngrok version
         echo "✅ ngrok downloaded and verified successfully"
 
+  # Release is now handled by fast-release.yml which uses PR artifacts
+  # This section is kept for backwards compatibility and manual triggers
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    if: github.event_name == 'workflow_dispatch'
     needs: [build, build-tauri-app, test-llama-server, test-ngrok-integration]
     runs-on: ubuntu-latest
     permissions:
@@ -254,54 +348,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Generate version
-      id: version
+    - name: Trigger fast release
       run: |
-        # Generate version based on date and short SHA
-        VERSION="v$(date +'%Y.%m.%d')-${GITHUB_SHA::7}"
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "Generated version: $VERSION"
-    
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-    
-    - name: List downloaded artifacts
-      run: |
-        echo "Downloaded artifacts:"
-        ls -la
-        find . -name "*.dmg" -o -name "*.tar.gz" -o -name "*.exe" | head -20
-    
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: ${{ steps.version.outputs.version }}
-        name: "Toke ${{ steps.version.outputs.version }}"
-        body: |
-          ## 🍃 Toke - Elevated AI
-          ### I remember my first toke 💨
-          
-          **Version:** ${{ steps.version.outputs.version }}
-          
-          ### Downloads
-          - **macOS App (Apple Silicon)**: `Toke_*_aarch64.dmg` 
-          - **macOS App (Intel)**: `Toke_*_x86_64.dmg`
-          - **macOS CLI (Apple Silicon)**: `toke-darwin-arm64`
-          - **macOS CLI (Intel)**: `toke-darwin-amd64`
-          - **Windows CLI**: `toke-windows-amd64.exe`
-          
-          ### Installation
-          - **macOS Desktop**: Download and open the .dmg file, drag Toke to Applications
-          - **CLI**: Download the binary for your platform and add to PATH
-          
-          Built by stoners, for all 🍃
-        files: |
-          toke-darwin-arm64/toke-darwin-arm64
-          toke-darwin-amd64/toke-darwin-amd64
-          toke-windows-amd64.exe/toke-windows-amd64.exe
-          toke-dmg-arm64/*.dmg
-          toke-dmg-amd64/*.dmg
-        draft: false
-        prerelease: false
-        generate_release_notes: false
+        echo "Triggering fast-release workflow..."
+        gh workflow run fast-release.yml
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ github.token }}
