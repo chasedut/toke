@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/v2/key"
 	"github.com/charmbracelet/bubbles/v2/spinner"
 	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/chasedut/toke/internal/app"
 	"github.com/chasedut/toke/internal/config"
 	"github.com/chasedut/toke/internal/history"
@@ -17,9 +18,9 @@ import (
 	"github.com/chasedut/toke/internal/session"
 	"github.com/chasedut/toke/internal/tui/components/anim"
 	"github.com/chasedut/toke/internal/tui/components/chat"
+	"github.com/chasedut/toke/internal/tui/components/chat/buddychat"
 	"github.com/chasedut/toke/internal/tui/components/chat/editor"
 	"github.com/chasedut/toke/internal/tui/components/chat/header"
-	"github.com/chasedut/toke/internal/tui/components/chat/buddychat"
 	"github.com/chasedut/toke/internal/tui/components/chat/messages"
 	"github.com/chasedut/toke/internal/tui/components/chat/sidebar"
 	"github.com/chasedut/toke/internal/tui/components/chat/splash"
@@ -28,13 +29,14 @@ import (
 	"github.com/chasedut/toke/internal/tui/components/core/layout"
 	"github.com/chasedut/toke/internal/tui/components/dialogs/commands"
 	"github.com/chasedut/toke/internal/tui/components/dialogs/filepicker"
+	githubDialog "github.com/chasedut/toke/internal/tui/components/dialogs/github"
+	jiraDialog "github.com/chasedut/toke/internal/tui/components/dialogs/jira"
 	"github.com/chasedut/toke/internal/tui/components/dialogs/models"
 	"github.com/chasedut/toke/internal/tui/page"
 	"github.com/chasedut/toke/internal/tui/styles"
 	"github.com/chasedut/toke/internal/tui/util"
 	"github.com/chasedut/toke/internal/version"
 	"github.com/chasedut/toke/internal/webshare"
-	"github.com/charmbracelet/lipgloss/v2"
 )
 
 var ChatPageID page.PageID = "chat"
@@ -434,6 +436,27 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return p, util.ReportWarn("Agent is busy, please wait before starting a new session...")
 		}
 		return p, p.newSession()
+
+	// Handle Jira issue selection from dialog
+	case jiraDialog.JiraIssueSelectedMsg:
+		// Format the issue content
+		content := jiraDialog.FormatIssueForChat(msg.Issue, msg.IncludeMetadata)
+		// Send message to editor to set the text
+		updatedEditor, cmd := p.editor.Update(editor.OpenEditorMsg{Text: content})
+		p.editor = updatedEditor.(editor.Editor)
+		// Focus editor
+		p.focusedPane = PanelTypeEditor
+		return p, cmd
+
+	// Handle GitHub PR selection from dialog
+	case githubDialog.GitHubPRSelectedMsg:
+		// Send message to editor to set the text
+		updatedEditor, cmd := p.editor.Update(editor.OpenEditorMsg{Text: msg.Content})
+		p.editor = updatedEditor.(editor.Editor)
+		// Focus editor
+		p.focusedPane = PanelTypeEditor
+		return p, cmd
+
 	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, p.keyMap.NewSession):
@@ -488,7 +511,7 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Toggle buddy chat visibility
 				u, cmd := p.buddyChat.Update(buddychat.ToggleBuddyChatMsg{})
 				p.buddyChat = u
-				
+
 				// If buddy chat is now visible, change focus to it
 				if p.buddyChat.IsVisible() {
 					p.focusedPane = PanelType("buddychat")
@@ -503,7 +526,7 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					p.focusedPane = PanelTypeEditor
 					p.editor.Focus()
 				}
-				
+
 				return p, cmd
 			}
 			return p, nil
@@ -1024,8 +1047,8 @@ func (p *chatPage) Help() help.KeyMap {
 			key.WithHelp("ctrl+p", "commands"),
 		)
 		helpBinding := key.NewBinding(
-			key.WithKeys("ctrl+g"),
-			key.WithHelp("ctrl+g", "more"),
+			key.WithKeys("ctrl+/"),
+			key.WithHelp("ctrl+/", "more"),
 		)
 		globalBindings = append(globalBindings, commandsBinding)
 		globalBindings = append(globalBindings,
@@ -1155,8 +1178,8 @@ func (p *chatPage) Help() help.KeyMap {
 		)
 		fullList = append(fullList, []key.Binding{
 			key.NewBinding(
-				key.WithKeys("ctrl+g"),
-				key.WithHelp("ctrl+g", "less"),
+				key.WithKeys("ctrl+/"),
+				key.WithHelp("ctrl+/", "less"),
 			),
 		})
 	}

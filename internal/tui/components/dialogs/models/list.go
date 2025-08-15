@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"os/exec"
 	"slices"
 	"strings"
 
@@ -114,6 +115,27 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 
 	configuredIcon := t.S().Base.Foreground(t.Success).Render(styles.CheckIcon)
 	configured := fmt.Sprintf("%s %s", configuredIcon, t.S().Subtle.Render("Configured"))
+	
+	// Check if Copilot is authenticated and add it first
+	if isCopilotAuthenticated() {
+		copilotSection := list.NewItemSection("🚁 GitHub Copilot")
+		copilotSection.SetInfo(configured)
+		
+		copilotGroup := list.Group[list.CompletionItem[ModelOption]]{
+			Section: copilotSection,
+		}
+		
+		copilotItem := list.NewCompletionItem(
+			"✨ Copilot Chat (Premium AI Pair Programmer)",
+			ModelOption{
+				Provider: catwalk.Provider{ID: "copilot", Name: "GitHub Copilot"},
+				Model:    catwalk.Model{ID: "copilot-chat", Name: "Copilot Chat"},
+			},
+			list.WithCompletionID("copilot:chat"),
+		)
+		copilotGroup.Items = append(copilotGroup.Items, copilotItem)
+		groups = append(groups, copilotGroup)
+	}
 	
 	// Add Local Models section only if a local model is configured and not excluded
 	if !m.excludeLocal {
@@ -307,4 +329,33 @@ func (m *ModelListComponent) GetModelType() int {
 
 func (m *ModelListComponent) SetInputPlaceholder(placeholder string) {
 	m.list.SetInputPlaceholder(placeholder)
+}
+
+// isCopilotAuthenticated checks if GitHub Copilot is authenticated
+func isCopilotAuthenticated() bool {
+	// Check if gh is authenticated first
+	cmd := exec.Command("gh", "auth", "status")
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+	
+	// Check if Copilot extension is installed and authenticated
+	cmd = exec.Command("gh", "extension", "list")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	
+	// Check if copilot is in the list of extensions
+	if !strings.Contains(string(output), "copilot") {
+		return false
+	}
+	
+	// Try to check copilot status
+	cmd = exec.Command("gh", "copilot", "status")
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+	
+	return true
 }

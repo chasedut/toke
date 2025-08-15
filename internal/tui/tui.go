@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -36,6 +37,10 @@ import (
 	shellDlg "github.com/chasedut/toke/internal/tui/components/dialogs/shell"
 	"github.com/chasedut/toke/internal/tui/components/dialogs/ngrokauth"
 	webshareDialog "github.com/chasedut/toke/internal/tui/components/dialogs/webshare"
+	jiraDialog "github.com/chasedut/toke/internal/tui/components/dialogs/jira"
+	githubDialog "github.com/chasedut/toke/internal/tui/components/dialogs/github"
+	"github.com/chasedut/toke/internal/api/jira"
+	"github.com/chasedut/toke/internal/api/github"
 	"github.com/chasedut/toke/internal/tui/loading"
 	"github.com/chasedut/toke/internal/tui/page"
 	"github.com/chasedut/toke/internal/tui/page/chat"
@@ -582,6 +587,50 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, pageCmd)
 		}
 		return a, tea.Batch(cmds...)
+	
+	// Handle Jira configuration saved
+	case jiraDialog.JiraConfigSavedMsg:
+		// Configuration saved, now open Jira dialog
+		return a, tea.Sequence(
+			util.CmdHandler(util.InfoMsg{
+				Type: util.InfoTypeSuccess,
+				Msg:  "🌿 Jira configured successfully! Let's get lifted!",
+				TTL:  3 * time.Second,
+			}),
+			a.openJiraDialog(),
+		)
+	
+	// Handle Jira issue selection
+	case jiraDialog.JiraIssueSelectedMsg:
+		// Pass the message to the chat page to add content to input
+		if chatPage, ok := a.pages[chat.ChatPageID]; ok {
+			updated, cmd := chatPage.Update(msg)
+			a.pages[chat.ChatPageID] = updated.(util.Model)
+			return a, cmd
+		}
+		return a, nil
+	
+	// Handle GitHub auth completion
+	case githubDialog.GitHubAuthCompleteMsg:
+		// Auth complete, open GitHub dialog
+		return a, tea.Sequence(
+			util.CmdHandler(util.InfoMsg{
+				Type: util.InfoTypeSuccess,
+				Msg:  "🌿 GitHub authenticated! Ready to smoke some PRs!",
+				TTL:  3 * time.Second,
+			}),
+			a.openGitHubDialog(),
+		)
+		
+	// Handle GitHub PR selection
+	case githubDialog.GitHubPRSelectedMsg:
+		// Pass the message to the chat page to add content to input
+		if chatPage, ok := a.pages[chat.ChatPageID]; ok {
+			updated, cmd := chatPage.Update(msg)
+			a.pages[chat.ChatPageID] = updated.(util.Model)
+			return a, cmd
+		}
+		return a, nil
 	}
 	s, _ := a.status.Update(msg)
 	a.status = s.(status.StatusCmp)
@@ -711,6 +760,24 @@ func (a *appModel) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			return util.ReportWarn("Agent is busy, please wait...")
 		}
 		return tea.Suspend
+	case key.Matches(msg, a.keyMap.Jira):
+		// Open Jira dialog
+		if !a.isConfigured {
+			return nil
+		}
+		if a.dialog.HasDialogs() {
+			return nil
+		}
+		return a.openJiraDialog()
+	case key.Matches(msg, a.keyMap.GitHub):
+		// Open GitHub dialog
+		if !a.isConfigured {
+			return nil
+		}
+		if a.dialog.HasDialogs() {
+			return nil
+		}
+		return a.openGitHubDialog()
 	default:
 		if a.dialog.HasDialogs() {
 			u, dialogCmd := a.dialog.Update(msg)
@@ -1076,5 +1143,101 @@ func (a *appModel) startWebShare(sessionID string) tea.Cmd {
 				}
 			},
 		)()
+	}
+}
+
+// openJiraDialog opens the Jira issues dialog
+func (a *appModel) openJiraDialog() tea.Cmd {
+	return func() tea.Msg {
+		// First check if punchout.toml exists
+		configPath := filepath.Join(os.Getenv("HOME"), ".config", "punchout", "punchout.toml")
+		_, err := os.Stat(configPath)
+		
+		// Get Jira config from environment or config
+		baseURL := os.Getenv("JIRA_BASE_URL")
+		email := os.Getenv("JIRA_EMAIL")
+		apiToken := os.Getenv("JIRA_API_TOKEN")
+		jql := os.Getenv("JIRA_JQL")
+		
+		if err != nil || baseURL == "" || email == "" || apiToken == "" {
+			// Show configuration dialog
+			dialog := jiraDialog.NewJiraConfigDialog()
+			return dialogs.OpenDialogMsg{
+				Model: dialog,
+			}
+		}
+		
+		if jql == "" {
+			// Default JQL to show issues assigned to current user
+			jql = "assignee = currentUser() ORDER BY updated DESC"
+		}
+		
+		jiraClient := jira.NewClient(baseURL, email, apiToken)
+		dialog, err := jiraDialog.NewJiraDialog(jiraClient, jql)
+		if err != nil {
+			return util.InfoMsg{
+				Type: util.InfoTypeError,
+				Msg:  fmt.Sprintf("Failed to fetch Jira issues: %v", err),
+				TTL:  5 * time.Second,
+			}
+		}
+		
+		return dialogs.OpenDialogMsg{
+			Model: dialog,
+		}
+	}
+}
+
+// openGitHubDialog opens the GitHub PR viewer dialog
+func (a *appModel) openGitHubDialog() tea.Cmd {
+	return func() tea.Msg {
+		// Check if gh is authenticated
+		cmd := exec.Command("gh", "auth", "status")
+		if err := cmd.Run(); err != nil {
+			// Show auth dialog
+			dialog := githubDialog.NewGitHubAuthDialog()
+			return dialogs.OpenDialogMsg{
+				Model: dialog,
+			}
+		}
+		
+		// Get GitHub token from gh cli or environment
+		token := os.Getenv("GITHUB_TOKEN")
+		if token == "" {
+			// Try to get token from gh cli
+			cmd := exec.Command("gh", "auth", "token")
+			output, err := cmd.Output()
+			if err == nil {
+				token = strings.TrimSpace(string(output))
+			}
+		}
+		
+		if token == "" {
+			// Show auth dialog if still no token
+			dialog := githubDialog.NewGitHubAuthDialog()
+			return dialogs.OpenDialogMsg{
+				Model: dialog,
+			}
+		}
+		
+		// Default query - PRs in repos the user has access to
+		query := os.Getenv("GITHUB_SEARCH_QUERY")
+		if query == "" {
+			query = "is:pr is:open involves:@me sort:updated-desc"
+		}
+		
+		githubClient := github.NewClient(token)
+		dialog, err := githubDialog.NewGitHubDialog(githubClient, query)
+		if err != nil {
+			return util.InfoMsg{
+				Type: util.InfoTypeError,
+				Msg:  fmt.Sprintf("Failed to fetch GitHub PRs: %v", err),
+				TTL:  5 * time.Second,
+			}
+		}
+		
+		return dialogs.OpenDialogMsg{
+			Model: dialog,
+		}
 	}
 }

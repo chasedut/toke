@@ -10,6 +10,8 @@ type KeyMap struct {
 	Commands key.Binding
 	Suspend  key.Binding
 	Sessions key.Binding
+	Jira     key.Binding
+	GitHub   key.Binding
 
 	pageBindings []key.Binding
 }
@@ -21,8 +23,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("ctrl+c", "quit"),
 		),
 		Help: key.NewBinding(
-			key.WithKeys("ctrl+g"),
-			key.WithHelp("ctrl+g", "more"),
+			key.WithKeys("ctrl+/"),
+			key.WithHelp("ctrl+/", "more"),
 		),
 		Commands: key.NewBinding(
 			key.WithKeys("ctrl+p"),
@@ -35,6 +37,14 @@ func DefaultKeyMap() KeyMap {
 		Sessions: key.NewBinding(
 			key.WithKeys("ctrl+s"),
 			key.WithHelp("ctrl+s", "sessions"),
+		),
+		Jira: key.NewBinding(
+			key.WithKeys("ctrl+j"),
+			key.WithHelp("ctrl+j", "jira issues"),
+		),
+		GitHub: key.NewBinding(
+			key.WithKeys("ctrl+g"),
+			key.WithHelp("ctrl+g", "github PRs"),
 		),
 	}
 }
