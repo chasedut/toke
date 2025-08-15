@@ -6,7 +6,7 @@
     <a href="https://github.com/chasedut/toke/actions"><img src="https://github.com/chasedut/toke/workflows/build/badge.svg" alt="Build Status"></a>
 </p>
 
-<p align="center">Your favorite coding buddy that's always down to smoke 💨<br />Built with love for the Weedmaps 2025 Hackathon.</p>
+<p align="center">Your favorite coding buddy that's always down to smoke 💨.<br />Built with love for the Weedmaps 2025 Hackathon.</p>
 
 <p align="center"><img width="800" alt="Toke Demo" src="https://github.com/user-attachments/assets/toke-demo.gif" /></p>
 
