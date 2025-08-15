@@ -113,7 +113,7 @@ func (c *Client) doRequest(method, path string, params url.Values) ([]byte, erro
 		u.RawQuery = params.Encode()
 	}
 
-	req, err := http.NewRequest(method, u.String(), nil)
+	req, err := http.NewRequest(method, u.String(), nil) //nolint:noctx
 	if err != nil {
 		return nil, err
 	}

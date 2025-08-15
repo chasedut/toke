@@ -403,8 +403,8 @@ func (g *githubDialogModel) renderDescription() string {
 	content.WriteString("\n")
 	
 	content.WriteString(t.S().Subtle.Render("Strain: "))
-	status := g.selectedPR.State
 	statusColor := t.GreenLight
+	var status string
 	if g.selectedPR.MergedAt != nil {
 		status = "🔥 merged - that premium bud"
 		statusColor = t.GreenDark
