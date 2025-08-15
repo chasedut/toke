@@ -19,6 +19,8 @@ Toke is an AI-powered coding assistant with serious weed culture vibes. Fork of 
 - **MLX Support (v0.4202+):** Apple Silicon optimized with GLM-4.5-Air models for that smooth performance
 - **Session-Based:** Keep your coding sessions organized like a proper stash box
 - **Auto-Versioning:** Each build auto-increments (0.4202 → 0.4203 → ...)
+- **Jira Integration:** Press Ctrl+J to browse and import Jira issues into your chat
+- **GitHub Integration:** Press Ctrl+H for a gh-dash style PR viewer
 - **Weed Industry Focus:** Built by stoners, for stoners in tech
 - **420-Friendly:** Special features at 4:20, because why not?
 - **Works Everywhere:** Blazes through macOS, Linux, Windows - we don't discriminate
@@ -130,6 +132,16 @@ Once you're in Toke:
 - `/hydrate` - Clear screen (stay hydrated!)
 - `/ash` - Clear conversation
 - `/passit` - Share session
+
+## Keyboard Shortcuts 🎹
+
+- `Ctrl+J` - Open Jira issues browser
+- `Ctrl+H` - Open GitHub PR viewer  
+- `Ctrl+P` - Command palette
+- `Ctrl+S` - Sessions manager
+- `Ctrl+C` - Quit
+- `Ctrl+Z` - Suspend to background
+- `Tab` - Switch between chat and input
 
 ## Configuration 🛠️
 

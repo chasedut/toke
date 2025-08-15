@@ -29,6 +29,8 @@ import (
 	"github.com/chasedut/toke/internal/tui/components/dialogs/commands"
 	"github.com/chasedut/toke/internal/tui/components/dialogs/filepicker"
 	"github.com/chasedut/toke/internal/tui/components/dialogs/models"
+	jiraDialog "github.com/chasedut/toke/internal/tui/components/dialogs/jira"
+	githubDialog "github.com/chasedut/toke/internal/tui/components/dialogs/github"
 	"github.com/chasedut/toke/internal/tui/page"
 	"github.com/chasedut/toke/internal/tui/styles"
 	"github.com/chasedut/toke/internal/tui/util"
@@ -434,6 +436,27 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return p, util.ReportWarn("Agent is busy, please wait before starting a new session...")
 		}
 		return p, p.newSession()
+	
+	// Handle Jira issue selection from dialog
+	case jiraDialog.JiraIssueSelectedMsg:
+		// Format the issue content
+		content := jiraDialog.FormatIssueForChat(msg.Issue, msg.IncludeMetadata)
+		// Send message to editor to set the text
+		updatedEditor, cmd := p.editor.Update(editor.OpenEditorMsg{Text: content})
+		p.editor = updatedEditor.(editor.Editor)
+		// Focus editor
+		p.focusedPane = PanelTypeEditor
+		return p, cmd
+		
+	// Handle GitHub PR selection from dialog
+	case githubDialog.GitHubPRSelectedMsg:
+		// Send message to editor to set the text
+		updatedEditor, cmd := p.editor.Update(editor.OpenEditorMsg{Text: msg.Content})
+		p.editor = updatedEditor.(editor.Editor)
+		// Focus editor
+		p.focusedPane = PanelTypeEditor
+		return p, cmd
+		
 	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, p.keyMap.NewSession):

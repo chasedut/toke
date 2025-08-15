@@ -55,6 +55,7 @@ require (
 require (
 	github.com/charmbracelet/harmonica v0.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 )
 
 require (
