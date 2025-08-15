@@ -1,9 +1,12 @@
 package imageprompt
 
 import (
+	"context"
+	"fmt"
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/v2/key"
 	"github.com/charmbracelet/bubbles/v2/spinner"
@@ -45,6 +48,8 @@ type imagePromptDialogCmp struct {
 	result    string // Success or error message
 	prompt    string // Current prompt being processed
 	imagePath string // Path to the generated image file
+	cmdDone   chan ImageCommandCompleteMsg // Channel for async command completion
+	startTime time.Time // When command execution started
 }
 
 type ImageCommandCompleteMsg struct {
@@ -56,6 +61,8 @@ type ImageCommandCompleteMsg struct {
 type ImageCommandExecuteMsg struct {
 	Prompt string
 }
+
+type checkCommandCompleteMsg struct{}
 
 func NewImagePromptDialog() ImagePromptDialog {
 	t := styles.CurrentTheme()
@@ -77,6 +84,7 @@ func NewImagePromptDialog() ImagePromptDialog {
 		keyMap:  DefaultImagePromptDialogKeyMap(),
 		spinner: s,
 		state:   StateInput,
+		cmdDone: make(chan ImageCommandCompleteMsg, 1),
 	}
 }
 
@@ -96,61 +104,35 @@ func (d *imagePromptDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if d.state == StateExecuting {
 			var cmd tea.Cmd
 			d.spinner, cmd = d.spinner.Update(msg)
-			return d, cmd
+			return d, tea.Batch(cmd, d.checkCommandComplete())
 		}
 		return d, nil
+	case checkCommandCompleteMsg:
+		// Only check if still executing
+		if d.state != StateExecuting {
+			return d, nil
+		}
+		// Non-blocking check if command completed
+		select {
+		case result := <-d.cmdDone:
+			return d, util.CmdHandler(result)
+		default:
+			// Command still running, check again later
+			return d, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
+				return checkCommandCompleteMsg{}
+			})
+		}
 	case ImageCommandExecuteMsg:
 		d.state = StateExecuting
 		d.prompt = msg.Prompt // Store the prompt
+		d.startTime = time.Now() // Start timing
 		d.input.Blur()
-		return d, tea.Cmd(func() tea.Msg {
-			// Execute the image generation command
-			cmd := exec.Command("uv", "run", 
-				"https://raw.githubusercontent.com/ivanfioravanti/qwen-image-mps/refs/heads/main/qwen-image-mps.py",
-				"-f", "-p", msg.Prompt, "-s", "30")
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				return ImageCommandCompleteMsg{
-					Success: false,
-					Message: "Failed to generate image: " + err.Error() + "\nOutput: " + string(output),
-				}
-			}
-			
-			// Parse output to find the generated image path
-			outputStr := string(output)
-			var extractedPath string
-			message := "Image generated successfully!"
-			
-			// Look for common image file patterns in the output
-			if strings.Contains(outputStr, ".png") || strings.Contains(outputStr, ".jpg") || strings.Contains(outputStr, ".jpeg") {
-				// Try to extract the file path from the output
-				lines := strings.Split(outputStr, "\n")
-				for _, line := range lines {
-					line = strings.TrimSpace(line)
-					if strings.Contains(line, ".png") || strings.Contains(line, ".jpg") || strings.Contains(line, ".jpeg") {
-						// Extract just the file path, not the whole message
-						if strings.Contains(line, "saved") || strings.Contains(line, "generated") || strings.Contains(line, "created") {
-							// Try to extract just the path part
-							parts := strings.Fields(line)
-							for _, part := range parts {
-								if strings.Contains(part, ".png") || strings.Contains(part, ".jpg") || strings.Contains(part, ".jpeg") {
-									extractedPath = part
-									break
-								}
-							}
-							message = "Image saved to: " + line
-							break
-						}
-					}
-				}
-			}
-			
-			return ImageCommandCompleteMsg{
-				Success:   true,
-				Message:   message,
-				ImagePath: extractedPath,
-			}
-		})
+		// Start the async command execution
+		d.executeImageCommand(msg.Prompt)
+		return d, tea.Batch(
+			d.spinner.Tick,
+			d.checkCommandComplete(),
+		)
 	case ImageCommandCompleteMsg:
 		d.state = StateCompleted
 		if !msg.Success {
@@ -176,14 +158,23 @@ func (d *imagePromptDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				d.input, cmd = d.input.Update(msg)
 				return d, cmd
 			}
-		case StateCompleted, StateError:
-			// Any key closes the dialog when showing results
+		case StateCompleted:
+			// Special handling for completed state with image
+			if d.imagePath != "" {
+				switch {
+				case key.Matches(msg, d.keyMap.Submit): // Enter key opens image
+					return d, tea.Batch(d.openImage(), util.CmdHandler(dialogs.CloseDialogMsg{}))
+				default:
+					// Any other key just closes the dialog
+					return d, util.CmdHandler(dialogs.CloseDialogMsg{})
+				}
+			} else {
+				// No image, any key closes
+				return d, util.CmdHandler(dialogs.CloseDialogMsg{})
+			}
+		case StateError:
+			// Any key closes the dialog when showing error
 			return d, util.CmdHandler(dialogs.CloseDialogMsg{})
-		}
-	case tea.MouseClickMsg:
-		if d.state == StateCompleted && d.imagePath != "" {
-			// Handle mouse click events only
-			return d, tea.Batch(d.openImage(), util.CmdHandler(dialogs.CloseDialogMsg{}))
 		}
 	}
 	return d, nil
@@ -211,8 +202,14 @@ func (d *imagePromptDialogCmp) View() string {
 	case StateExecuting:
 		title := "Generating Image"
 		promptText := t.S().Muted.Render("Prompt: " + d.prompt)
-		statusView := d.spinner.View() + " Please wait..."
-		helpText := t.S().Muted.Render("Generating image, please wait...")
+		
+		// Calculate elapsed time
+		elapsed := time.Since(d.startTime)
+		elapsedText := t.S().Muted.Render(
+			"Elapsed: " + elapsed.Round(time.Second).String(),
+		)
+		
+		statusView := d.spinner.View() + " Using Imagination. I need a few minutes, tops..."
 		
 		content = lipgloss.JoinVertical(
 			lipgloss.Left,
@@ -222,7 +219,7 @@ func (d *imagePromptDialogCmp) View() string {
 			"",
 			statusView,
 			"",
-			helpText,
+			elapsedText,
 		)
 	case StateCompleted:
 		title := "Image Generation Complete"
@@ -230,17 +227,22 @@ func (d *imagePromptDialogCmp) View() string {
 		
 		var resultView string
 		if d.imagePath != "" {
-			// Make only the file path clickable by styling it differently
-			pathStyle := t.S().Base.Foreground(t.Blue).Underline(true)
-			styledPath := pathStyle.Render(d.imagePath)
-			resultView = successIcon + " Image saved to: " + styledPath
+			// Use terminal hyperlink (OSC 8) for native clicking support
+			prefix := successIcon + " Image saved to: "
+			
+			// Create a clickable hyperlink using OSC 8 escape sequences
+			hyperlink := fmt.Sprintf("\033]8;;file://%s\033\\%s\033]8;;\033\\", 
+				d.imagePath, 
+				t.S().Base.Foreground(t.Blue).Underline(true).Render(d.imagePath))
+			
+			resultView = prefix + hyperlink
 		} else {
 			resultView = successIcon + " " + d.result
 		}
 		
 		var helpText string
 		if d.imagePath != "" {
-			helpText = t.S().Muted.Render("Click on file path to open image • Press any key to close")
+			helpText = t.S().Muted.Render("Click file path or press Enter to open • Press any other key to close")
 		} else {
 			helpText = t.S().Muted.Render("Press any key to close")
 		}
@@ -270,6 +272,68 @@ func (d *imagePromptDialogCmp) View() string {
 	}
 	
 	return d.style().Render(content)
+}
+
+func (d *imagePromptDialogCmp) executeImageCommand(prompt string) {
+	// Start the command execution in a goroutine, don't return a tea.Cmd
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		
+		cmd := exec.CommandContext(ctx, "uv", "run", 
+			"https://raw.githubusercontent.com/ivanfioravanti/qwen-image-mps/refs/heads/main/qwen-image-mps.py",
+			"-f", "-p", prompt, "-s", "30")
+		
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			d.cmdDone <- ImageCommandCompleteMsg{
+				Success: false,
+				Message: "Failed to generate image: " + err.Error() + "\nOutput: " + string(output),
+			}
+			return
+		}
+		
+		// Parse output to find the generated image path
+		outputStr := string(output)
+		var extractedPath string
+		message := "Image generated successfully!"
+		
+		// Look for common image file patterns in the output
+		if strings.Contains(outputStr, ".png") || strings.Contains(outputStr, ".jpg") || strings.Contains(outputStr, ".jpeg") {
+			// Try to extract the file path from the output
+			lines := strings.Split(outputStr, "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if strings.Contains(line, ".png") || strings.Contains(line, ".jpg") || strings.Contains(line, ".jpeg") {
+					// Extract just the file path, not the whole message
+					if strings.Contains(line, "saved") || strings.Contains(line, "generated") || strings.Contains(line, "created") {
+						// Try to extract just the path part
+						parts := strings.Fields(line)
+						for _, part := range parts {
+							if strings.Contains(part, ".png") || strings.Contains(part, ".jpg") || strings.Contains(part, ".jpeg") {
+								extractedPath = part
+								break
+							}
+						}
+						message = "Image saved to: " + line
+						break
+					}
+				}
+			}
+		}
+		
+		d.cmdDone <- ImageCommandCompleteMsg{
+			Success:   true,
+			Message:   message,
+			ImagePath: extractedPath,
+		}
+	}()
+}
+
+func (d *imagePromptDialogCmp) checkCommandComplete() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
+		return checkCommandCompleteMsg{}
+	})
 }
 
 func (d *imagePromptDialogCmp) openImage() tea.Cmd {
