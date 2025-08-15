@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/chasedut/toke/internal/config"
 	"github.com/chasedut/toke/internal/fsext"
 	"github.com/chasedut/toke/internal/lsp"
@@ -13,7 +14,6 @@ import (
 	"github.com/chasedut/toke/internal/session"
 	"github.com/chasedut/toke/internal/tui/styles"
 	"github.com/chasedut/toke/internal/tui/util"
-	"github.com/charmbracelet/lipgloss/v2"
 )
 
 type Header interface {
@@ -62,9 +62,7 @@ func (p *header) View() string {
 	t := styles.CurrentTheme()
 	details := p.details()
 	parts := []string{
-		t.S().Base.Foreground(t.Secondary).Render("Charm™"),
-		" ",
-		styles.ApplyBoldForegroundGrad("TOKE", t.Secondary, t.Primary),
+		styles.ApplyBoldForegroundGrad("Toke", t.Secondary, t.Primary),
 		" ",
 	}
 

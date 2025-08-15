@@ -76,15 +76,15 @@ type (
 	InviteBuddyMsg        struct {
 		SessionID string
 	}
-	CompactMsg            struct {
+	CompactMsg struct {
 		SessionID string
 	}
-	WebShareStartedMsg    struct {
+	WebShareStartedMsg struct {
 		LocalURL string
 		NgrokURL string
 		WebShare interface{} // The webshare.SessionShare instance
 	}
-	WebShareStoppedMsg    struct{}
+	WebShareStoppedMsg struct{}
 )
 
 func NewCommandDialog(sessionID string) CommandsDialog {
@@ -339,7 +339,7 @@ func (c *commandDialogCmp) defaultCommands() []Command {
 				})
 			},
 		})
-		
+
 		commands = append(commands, Command{
 			ID:          "Summarize",
 			Title:       "Summarize Session",
@@ -426,7 +426,7 @@ func (c *commandDialogCmp) defaultCommands() []Command {
 		{
 			ID:          "toggle_help",
 			Title:       "Toggle Help",
-			Shortcut:    "ctrl+g",
+			Shortcut:    "ctrl+/",
 			Description: "Toggle help",
 			Handler: func(cmd Command) tea.Cmd {
 				return util.CmdHandler(ToggleHelpMsg{})
