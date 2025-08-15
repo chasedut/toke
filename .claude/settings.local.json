@@ -20,7 +20,8 @@
       "Bash(mv:*)",
       "Bash(go:*)",
       "Bash(npm install:*)",
-      "Bash(gh secret set:*)"
+      "Bash(gh secret set:*)",
+      "Bash(brew install:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"

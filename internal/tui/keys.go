@@ -23,8 +23,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("ctrl+c", "quit"),
 		),
 		Help: key.NewBinding(
-			key.WithKeys("ctrl+g"),
-			key.WithHelp("ctrl+g", "more"),
+			key.WithKeys("ctrl+/"),
+			key.WithHelp("ctrl+/", "more"),
 		),
 		Commands: key.NewBinding(
 			key.WithKeys("ctrl+p"),
@@ -43,8 +43,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("ctrl+j", "jira issues"),
 		),
 		GitHub: key.NewBinding(
-			key.WithKeys("ctrl+h"),
-			key.WithHelp("ctrl+h", "github PRs"),
+			key.WithKeys("ctrl+g"),
+			key.WithHelp("ctrl+g", "github PRs"),
 		),
 	}
 }
