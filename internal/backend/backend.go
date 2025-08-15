@@ -20,13 +20,13 @@ import (
 const (
 	// Backend binary name (MLX server wrapper)
 	binaryName = "mlx-server"
-	
+
 	// Default port for the backend server
-	defaultPort = 11434
-	
+	defaultPort = 11435
+
 	// Model identifier
 	modelID = "mlx-community/GLM-4.5-Air-3bit"
-	
+
 	// Download URLs for the bundled MLX server + model
 	// This would be a custom package containing:
 	// - Python runtime (embedded)
@@ -34,10 +34,10 @@ const (
 	// - Pre-downloaded GLM-4.5-Air-3bit model
 	// - Launch script
 	macOSARM64URL = "https://github.com/chasedut/toke-mlx-backend/releases/download/v0.1.0/mlx-glm-bundle-darwin-arm64.tar.gz"
-	
+
 	// Expected checksums for verification
 	macOSARM64Checksum = "placeholder_checksum" // TODO: Update with actual checksum
-	
+
 	// Download timeout
 	downloadTimeout = 60 * time.Minute // Longer timeout for large model
 )
@@ -73,7 +73,7 @@ func (b *Backend) IsRunning() bool {
 	if b.process == nil {
 		return false
 	}
-	
+
 	// Check if process is still alive
 	err := b.process.Signal(os.Signal(nil))
 	return err == nil
@@ -112,11 +112,11 @@ func (b *Backend) Download(ctx context.Context, progressFn func(downloaded, tota
 	if !supported {
 		return fmt.Errorf("platform not supported: %s", reason)
 	}
-	
+
 	// Get download URL and checksum for current platform
 	downloadURL := macOSARM64URL
 	expectedChecksum := macOSARM64Checksum
-	
+
 	// Create temp file for download
 	tempFile, err := os.CreateTemp("", "toke-backend-*.tar.gz")
 	if err != nil {
@@ -124,29 +124,29 @@ func (b *Backend) Download(ctx context.Context, progressFn func(downloaded, tota
 	}
 	defer os.Remove(tempFile.Name())
 	defer tempFile.Close()
-	
+
 	// Download with timeout
 	downloadCtx, cancel := context.WithTimeout(ctx, downloadTimeout)
 	defer cancel()
-	
+
 	req, err := http.NewRequestWithContext(downloadCtx, "GET", downloadURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to download: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download failed with status: %s", resp.Status)
 	}
-	
+
 	// Get total size for progress
 	totalSize := resp.ContentLength
-	
+
 	// Create progress reader
 	hasher := sha256.New()
 	progressReader := &progressReader{
@@ -154,25 +154,25 @@ func (b *Backend) Download(ctx context.Context, progressFn func(downloaded, tota
 		total:      totalSize,
 		progressFn: progressFn,
 	}
-	
+
 	// Download and hash simultaneously
 	writer := io.MultiWriter(tempFile, hasher)
 	_, err = io.Copy(writer, progressReader)
 	if err != nil {
 		return fmt.Errorf("failed to download file: %w", err)
 	}
-	
+
 	// Verify checksum
 	actualChecksum := hex.EncodeToString(hasher.Sum(nil))
 	if expectedChecksum != "placeholder_checksum" && actualChecksum != expectedChecksum {
 		return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedChecksum, actualChecksum)
 	}
-	
+
 	// Extract the archive
 	if err := b.extractArchive(tempFile.Name()); err != nil {
 		return fmt.Errorf("failed to extract archive: %w", err)
 	}
-	
+
 	slog.Info("Backend downloaded and installed successfully")
 	return nil
 }
@@ -182,39 +182,39 @@ func (b *Backend) Start(ctx context.Context) error {
 	if !b.IsInstalled() {
 		return fmt.Errorf("backend not installed")
 	}
-	
+
 	if b.IsRunning() {
 		slog.Info("Backend already running")
 		return nil
 	}
-	
+
 	binaryPath := b.getBinaryPath()
-	
+
 	// Create context for the backend process
 	backendCtx, cancel := context.WithCancel(ctx)
 	b.cancelFunc = cancel
-	
+
 	// Start the backend process
-	cmd := exec.CommandContext(backendCtx, binaryPath, 
+	cmd := exec.CommandContext(backendCtx, binaryPath,
 		"--port", fmt.Sprintf("%d", b.port),
 		"--model-path", filepath.Join(b.dataDir, "models", "glm-4.5-air-3bit"),
 	)
-	
+
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start backend: %w", err)
 	}
-	
+
 	b.process = cmd.Process
-	
+
 	// Wait for backend to be ready
 	if err := b.waitForReady(ctx); err != nil {
 		b.Stop()
 		return fmt.Errorf("backend failed to start: %w", err)
 	}
-	
+
 	slog.Info("Backend started successfully", "port", b.port)
 	return nil
 }
@@ -225,7 +225,7 @@ func (b *Backend) Stop() error {
 		b.cancelFunc()
 		b.cancelFunc = nil
 	}
-	
+
 	if b.process != nil {
 		// Give it time to shutdown gracefully
 		done := make(chan error, 1)
@@ -233,7 +233,7 @@ func (b *Backend) Stop() error {
 			_, err := b.process.Wait()
 			done <- err
 		}()
-		
+
 		select {
 		case <-done:
 			// Process exited
@@ -241,10 +241,10 @@ func (b *Backend) Stop() error {
 			// Force kill if not exited
 			b.process.Kill()
 		}
-		
+
 		b.process = nil
 	}
-	
+
 	slog.Info("Backend stopped")
 	return nil
 }
@@ -266,15 +266,15 @@ func (b *Backend) extractArchive(archivePath string) error {
 		return err
 	}
 	defer file.Close()
-	
+
 	gzr, err := gzip.NewReader(file)
 	if err != nil {
 		return err
 	}
 	defer gzr.Close()
-	
+
 	tr := tar.NewReader(gzr)
-	
+
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
@@ -283,9 +283,9 @@ func (b *Backend) extractArchive(archivePath string) error {
 		if err != nil {
 			return err
 		}
-		
+
 		target := filepath.Join(b.dataDir, header.Name)
-		
+
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0755); err != nil {
@@ -295,19 +295,19 @@ func (b *Backend) extractArchive(archivePath string) error {
 			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 				return err
 			}
-			
+
 			outFile, err := os.Create(target)
 			if err != nil {
 				return err
 			}
-			
+
 			if _, err := io.Copy(outFile, tr); err != nil {
 				outFile.Close()
 				return err
 			}
-			
+
 			outFile.Close()
-			
+
 			// Set executable permissions if it's the binary
 			if filepath.Base(target) == binaryName {
 				if err := os.Chmod(target, 0755); err != nil {
@@ -316,18 +316,18 @@ func (b *Backend) extractArchive(archivePath string) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
 func (b *Backend) waitForReady(ctx context.Context) error {
 	endpoint := b.GetEndpoint() + "/health"
-	
+
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
-	
+
 	timeout := time.After(30 * time.Second)
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -339,13 +339,13 @@ func (b *Backend) waitForReady(ctx context.Context) error {
 			if err != nil {
 				continue
 			}
-			
+
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				continue
 			}
 			resp.Body.Close()
-			
+
 			if resp.StatusCode == http.StatusOK {
 				return nil
 			}

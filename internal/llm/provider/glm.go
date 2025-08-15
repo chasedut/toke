@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
-	"github.com/google/uuid"
 	"github.com/chasedut/toke/internal/llm/tools"
 	"github.com/chasedut/toke/internal/message"
+	"github.com/google/uuid"
 )
 
 // GLMProvider wraps GLM models served via MLX with OpenAI-compatible API
@@ -33,13 +33,13 @@ type glmClient struct {
 // NewGLMProvider creates a new GLM provider for MLX-served models
 func NewGLMProvider(opts ...ProviderClientOption) Provider {
 	options := providerClientOptions{
-		baseURL: "http://localhost:11434/v1", // Default local MLX server
+		baseURL: "http://localhost:11435/v1", // Default local MLX server
 	}
-	
+
 	for _, opt := range opts {
 		opt(&options)
 	}
-	
+
 	client := &glmClient{
 		httpClient: &http.Client{Timeout: 5 * time.Minute},
 		baseURL:    options.baseURL,
@@ -47,7 +47,7 @@ func NewGLMProvider(opts ...ProviderClientOption) Provider {
 		model:      options.model(options.modelType),
 		maxTokens:  options.maxTokens,
 	}
-	
+
 	return &GLMProvider{
 		baseProvider: baseProvider[*glmClient]{
 			options: options,
@@ -87,21 +87,21 @@ type glmFunction struct {
 }
 
 type glmResponse struct {
-	ID      string       `json:"id"`
-	Object  string       `json:"object"`
-	Created int64        `json:"created"`
-	Model   string       `json:"model"`
-	Choices []glmChoice  `json:"choices"`
-	Usage   glmUsage     `json:"usage,omitempty"`
-	Error   *glmError    `json:"error,omitempty"`
+	ID      string      `json:"id"`
+	Object  string      `json:"object"`
+	Created int64       `json:"created"`
+	Model   string      `json:"model"`
+	Choices []glmChoice `json:"choices"`
+	Usage   glmUsage    `json:"usage,omitempty"`
+	Error   *glmError   `json:"error,omitempty"`
 }
 
 type glmChoice struct {
-	Index        int            `json:"index"`
-	Message      glmMessage     `json:"message,omitempty"`
-	Delta        glmMessage     `json:"delta,omitempty"`
-	FinishReason string         `json:"finish_reason,omitempty"`
-	ToolCalls    []glmToolCall  `json:"tool_calls,omitempty"`
+	Index        int           `json:"index"`
+	Message      glmMessage    `json:"message,omitempty"`
+	Delta        glmMessage    `json:"delta,omitempty"`
+	FinishReason string        `json:"finish_reason,omitempty"`
+	ToolCalls    []glmToolCall `json:"tool_calls,omitempty"`
 }
 
 type glmToolCall struct {
@@ -130,16 +130,16 @@ type glmError struct {
 // Convert internal messages to GLM format
 func (c *glmClient) convertMessages(messages []message.Message) []glmMessage {
 	var glmMessages []glmMessage
-	
+
 	for _, msg := range messages {
 		content := msg.Content().String()
-		
+
 		// Map roles appropriately
 		role := string(msg.Role)
 		if role == "human" {
 			role = "user"
 		}
-		
+
 		// Handle tool results specially for GLM
 		if msg.Role == message.User && len(msg.ToolResults()) > 0 {
 			// Inject tool results into the content for GLM to understand
@@ -154,13 +154,13 @@ func (c *glmClient) convertMessages(messages []message.Message) []glmMessage {
 			}
 			content = toolContent.String()
 		}
-		
+
 		glmMessages = append(glmMessages, glmMessage{
 			Role:    role,
 			Content: content,
 		})
 	}
-	
+
 	return glmMessages
 }
 
@@ -169,7 +169,7 @@ func (c *glmClient) convertTools(tools []tools.BaseTool) []glmTool {
 	if len(tools) == 0 {
 		return nil
 	}
-	
+
 	var glmTools []glmTool
 	for _, tool := range tools {
 		info := tool.Info()
@@ -182,7 +182,7 @@ func (c *glmClient) convertTools(tools []tools.BaseTool) []glmTool {
 			},
 		})
 	}
-	
+
 	return glmTools
 }
 
@@ -191,7 +191,7 @@ func (c *glmClient) parseToolCalls(toolCalls []glmToolCall) []message.ToolCall {
 	if len(toolCalls) == 0 {
 		return nil
 	}
-	
+
 	var calls []message.ToolCall
 	for _, tc := range toolCalls {
 		calls = append(calls, message.ToolCall{
@@ -201,7 +201,7 @@ func (c *glmClient) parseToolCalls(toolCalls []glmToolCall) []message.ToolCall {
 			Type:  "function",
 		})
 	}
-	
+
 	return calls
 }
 
@@ -214,48 +214,48 @@ func (c *glmClient) send(ctx context.Context, messages []message.Message, tools 
 		Stream:      false,
 		Tools:       c.convertTools(tools),
 	}
-	
+
 	jsonData, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
-	
+
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	httpReq.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
-	
+
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
-	
+
 	var glmResp glmResponse
 	if err := json.Unmarshal(body, &glmResp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
-	
+
 	if glmResp.Error != nil {
 		return nil, fmt.Errorf("GLM API error: %s", glmResp.Error.Message)
 	}
-	
+
 	if len(glmResp.Choices) == 0 {
 		return nil, fmt.Errorf("no choices in response")
 	}
-	
+
 	choice := glmResp.Choices[0]
-	
+
 	return &ProviderResponse{
 		Content:   choice.Message.Content,
 		ToolCalls: c.parseToolCalls(choice.ToolCalls),
@@ -269,10 +269,10 @@ func (c *glmClient) send(ctx context.Context, messages []message.Message, tools 
 
 func (c *glmClient) stream(ctx context.Context, messages []message.Message, tools []tools.BaseTool) <-chan ProviderEvent {
 	events := make(chan ProviderEvent)
-	
+
 	go func() {
 		defer close(events)
-		
+
 		req := glmRequest{
 			Model:       "glm-4.5-air-3bit",
 			Messages:    c.convertMessages(messages),
@@ -281,42 +281,42 @@ func (c *glmClient) stream(ctx context.Context, messages []message.Message, tool
 			Stream:      true,
 			Tools:       c.convertTools(tools),
 		}
-		
+
 		jsonData, err := json.Marshal(req)
 		if err != nil {
 			events <- ProviderEvent{Type: EventError, Error: fmt.Errorf("failed to marshal request: %w", err)}
 			return
 		}
-		
+
 		httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewBuffer(jsonData))
 		if err != nil {
 			events <- ProviderEvent{Type: EventError, Error: fmt.Errorf("failed to create request: %w", err)}
 			return
 		}
-		
+
 		httpReq.Header.Set("Content-Type", "application/json")
 		httpReq.Header.Set("Accept", "text/event-stream")
 		if c.apiKey != "" {
 			httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 		}
-		
+
 		resp, err := c.httpClient.Do(httpReq)
 		if err != nil {
 			events <- ProviderEvent{Type: EventError, Error: fmt.Errorf("failed to send request: %w", err)}
 			return
 		}
 		defer resp.Body.Close()
-		
+
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			events <- ProviderEvent{Type: EventError, Error: fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))}
 			return
 		}
-		
+
 		// Parse SSE stream
 		c.parseSSEStream(resp.Body, events)
 	}()
-	
+
 	return events
 }
 
@@ -326,14 +326,14 @@ func (c *glmClient) parseSSEStream(reader io.Reader, events chan<- ProviderEvent
 	var toolCalls []message.ToolCall
 	var currentToolCall *message.ToolCall
 	var usage TokenUsage
-	
+
 	for scanner.Scan() {
 		line := scanner.Text()
-		
+
 		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}
-		
+
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
 			// Send final response
@@ -348,18 +348,18 @@ func (c *glmClient) parseSSEStream(reader io.Reader, events chan<- ProviderEvent
 			}
 			return
 		}
-		
+
 		var chunk glmResponse
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
 		}
-		
+
 		if len(chunk.Choices) == 0 {
 			continue
 		}
-		
+
 		choice := chunk.Choices[0]
-		
+
 		// Handle content delta
 		if choice.Delta.Content != "" {
 			if contentBuffer.Len() == 0 {
@@ -371,7 +371,7 @@ func (c *glmClient) parseSSEStream(reader io.Reader, events chan<- ProviderEvent
 				Content: choice.Delta.Content,
 			}
 		}
-		
+
 		// Handle tool calls
 		if len(choice.ToolCalls) > 0 {
 			for _, tc := range choice.ToolCalls {
@@ -398,7 +398,7 @@ func (c *glmClient) parseSSEStream(reader io.Reader, events chan<- ProviderEvent
 				}
 			}
 		}
-		
+
 		// Handle finish reason
 		if choice.FinishReason != "" {
 			if currentToolCall != nil {
@@ -413,7 +413,7 @@ func (c *glmClient) parseSSEStream(reader io.Reader, events chan<- ProviderEvent
 			}
 		}
 	}
-	
+
 	if err := scanner.Err(); err != nil {
 		events <- ProviderEvent{Type: EventError, Error: fmt.Errorf("stream reading error: %w", err)}
 	}
